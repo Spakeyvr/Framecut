@@ -1,0 +1,144 @@
+import { invoke } from "@tauri-apps/api/core";
+import { open, save } from "@tauri-apps/plugin-dialog";
+import type { MediaItem, ClipRef } from "../types";
+
+// ── FFmpeg check ─────────────────────────────────────────────────────────────
+
+export const checkFfmpeg = () => invoke<void>("check_ffmpeg");
+
+// ── Project ──────────────────────────────────────────────────────────────────
+
+export const createProject = (name: string) => invoke<string>("create_project", { name });
+
+export const openProjectFile = async (): Promise<string | null> => {
+  const path = await open({
+    filters: [{ name: "FrameCut Project", extensions: ["fcproj"] }],
+  });
+  if (!path) return null;
+  // open() returns string | string[] | null in @tauri-apps/plugin-dialog v2
+  const filePath = Array.isArray(path) ? path[0] : path;
+  return invoke<string>("open_project", { path: filePath });
+};
+
+export const saveProject = (path: string, data: string) =>
+  invoke<void>("save_project", { path, data });
+
+export const saveProjectDialog = async (data: string): Promise<string | null> => {
+  const path = await save({
+    filters: [{ name: "FrameCut Project", extensions: ["fcproj"] }],
+  });
+  if (!path) return null;
+  await saveProject(path, data);
+  return path;
+};
+
+// ── Media ────────────────────────────────────────────────────────────────────
+
+interface MediaItemResponse {
+  id: string;
+  name: string;
+  path: string;
+  duration: number;
+  width: number;
+  height: number;
+  fps: number;
+  has_audio: boolean;
+  thumbnail_path: string;
+  type: string;
+}
+
+export const importMediaDialog = async (): Promise<MediaItem[]> => {
+  const result = await open({
+    multiple: true,
+    filters: [
+      {
+        name: "Media Files",
+        extensions: [
+          "mp4",
+          "mkv",
+          "avi",
+          "mov",
+          "webm",
+          "mp3",
+          "wav",
+          "aac",
+          "flac",
+          "ogg",
+          "png",
+          "jpg",
+          "jpeg",
+          "gif",
+          "bmp",
+        ],
+      },
+    ],
+  });
+  if (!result || (Array.isArray(result) && result.length === 0)) return [];
+
+  const paths = Array.isArray(result) ? result : [result];
+  const json = await invoke<string>("import_media", { paths });
+  const items: MediaItemResponse[] = JSON.parse(json);
+
+  return items.map((item) => ({
+    id: item.id,
+    name: item.name,
+    path: item.path,
+    duration: item.duration,
+    width: item.width,
+    height: item.height,
+    fps: item.fps,
+    hasAudio: item.has_audio,
+    thumbnailPath: item.thumbnail_path || undefined,
+    type: item.type as MediaItem["type"],
+  }));
+};
+
+export const probeMedia = (path: string) => invoke<string>("probe_media", { path });
+
+export const getThumbnail = (path: string, time: number) =>
+  invoke<string>("get_thumbnail", { path, time });
+
+// ── Preview ──────────────────────────────────────────────────────────────────
+
+export const seekPreview = (
+  clipsJson: string,
+  time: number,
+  width: number,
+  height: number,
+) => invoke<number[]>("seek_preview", { clipsJson, time, width, height });
+
+// ── Export ────────────────────────────────────────────────────────────────────
+
+export interface ExportRequestPayload {
+  clips: ClipRef[];
+  outputPath: string;
+  width: number;
+  height: number;
+  fps: number;
+  codec: string;
+  crf: number;
+  audioBitrate: string;
+}
+
+export const startExport = async (payload: ExportRequestPayload): Promise<string> => {
+  const request = {
+    clips: payload.clips.map((c) => ({
+      media_path: c.mediaPath,
+      source_start: c.sourceStart,
+      source_end: c.sourceEnd,
+      timeline_start: c.timelineStart,
+    })),
+    output_path: payload.outputPath,
+    width: payload.width,
+    height: payload.height,
+    fps: payload.fps,
+    codec: payload.codec,
+    crf: payload.crf,
+    audio_bitrate: payload.audioBitrate,
+  };
+  const json = await invoke<string>("start_export", { request });
+  const result = JSON.parse(json);
+  return result.jobId;
+};
+
+export const cancelExport = (jobId: string) => invoke<void>("cancel_export", { jobId });

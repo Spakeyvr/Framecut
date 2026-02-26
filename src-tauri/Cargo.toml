@@ -1,0 +1,51 @@
+[workspace]
+members = [
+    ".",
+    "crates/fc-project",
+    "crates/fc-media",
+    "crates/fc-timeline",
+    "crates/fc-effects",
+    "crates/fc-captions",
+    "crates/fc-export",
+    "crates/fc-preview",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Proprietary"
+
+[package]
+name = "framecut"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "framecut_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[[bin]]
+name = "framecut"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "process", "rt-multi-thread", "sync"] }
+uuid = { version = "1", features = ["v4"] }
+
+fc-project = { path = "crates/fc-project" }
+fc-media = { path = "crates/fc-media" }
+fc-timeline = { path = "crates/fc-timeline" }
+fc-effects = { path = "crates/fc-effects" }
+fc-captions = { path = "crates/fc-captions" }
+fc-export = { path = "crates/fc-export" }
+fc-preview = { path = "crates/fc-preview" }
