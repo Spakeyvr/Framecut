@@ -2,9 +2,50 @@ import { useEffect } from "react";
 import { useUIStore } from "../stores/ui-store";
 import { useProjectStore } from "../stores/project-store";
 import { SHORTCUT_BINDINGS } from "../constants/shortcuts";
+import {
+  openProjectFile,
+  saveProject,
+  saveProjectDialog,
+  confirmUnsavedChanges,
+} from "../api/commands";
+import type { Project } from "../types";
 
 export function useKeyboardShortcuts() {
   useEffect(() => {
+    const handleSaveAs = async () => {
+      const project = useProjectStore.getState();
+      const data = JSON.stringify(project.getProjectData(), null, 2);
+      const path = await saveProjectDialog(data);
+      if (path) {
+        project.setFilePath(path);
+        project.markClean();
+      }
+    };
+
+    const handleSave = async () => {
+      const project = useProjectStore.getState();
+      const data = JSON.stringify(project.getProjectData(), null, 2);
+      if (project.filePath) {
+        await saveProject(project.filePath, data);
+        project.markClean();
+      } else {
+        await handleSaveAs();
+      }
+    };
+
+    const handleOpen = async () => {
+      const project = useProjectStore.getState();
+      if (project.isDirty) {
+        const proceed = await confirmUnsavedChanges();
+        if (!proceed) return;
+      }
+      const result = await openProjectFile();
+      if (result) {
+        const parsed: Project = JSON.parse(result.content);
+        project.loadProject(parsed, result.path);
+      }
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       const isTypingTarget =
@@ -104,9 +145,24 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Ctrl/Cmd+S: save project (placeholder)
+      // Ctrl/Cmd+Shift+S: save project as
+      if ((e.ctrlKey || e.metaKey) && e.code === SHORTCUT_BINDINGS.SAVE && e.shiftKey) {
+        e.preventDefault();
+        handleSaveAs();
+        return;
+      }
+
+      // Ctrl/Cmd+S: save project
       if ((e.ctrlKey || e.metaKey) && e.code === SHORTCUT_BINDINGS.SAVE && !e.shiftKey) {
         e.preventDefault();
+        handleSave();
+        return;
+      }
+
+      // Ctrl/Cmd+O: open project
+      if ((e.ctrlKey || e.metaKey) && e.code === "KeyO") {
+        e.preventDefault();
+        handleOpen();
         return;
       }
 

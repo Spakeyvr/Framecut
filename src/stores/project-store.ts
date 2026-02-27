@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { nanoid } from "nanoid";
-import type { MediaItem, Clip, Track, TrackKind } from "../types";
+import type { MediaItem, Clip, Track, TrackKind, Project } from "../types";
 import { clipEnd } from "../types";
 
 // ── Undo / Redo snapshot types ────────────────────────────────────────────────
@@ -26,9 +26,19 @@ interface ProjectState {
   media: MediaItem[];
   tracks: Track[];
 
+  // File management
+  filePath: string | null;
+  isDirty: boolean;
+
   // Undo / Redo
   undoStack: Snapshot[];
   redoStack: Snapshot[];
+
+  // Actions — file management
+  getProjectData: () => Project;
+  setFilePath: (path: string | null) => void;
+  markClean: () => void;
+  resetProject: () => void;
 
   // Actions — media
   addMedia: (items: MediaItem[]) => void;
@@ -62,14 +72,7 @@ interface ProjectState {
   getClipsAtTime: (time: number) => { clip: Clip; media: MediaItem }[];
 
   // Project save/load
-  loadProject: (data: {
-    projectName: string;
-    media: MediaItem[];
-    tracks: Track[];
-    fps: number;
-    width: number;
-    height: number;
-  }) => void;
+  loadProject: (data: Project, filePath: string | null) => void;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -101,8 +104,50 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     { id: nanoid(), kind: "audio", clips: [], muted: false, visible: true },
   ],
 
+  filePath: null,
+  isDirty: false,
+
   undoStack: [],
   redoStack: [],
+
+  // ── File management ──────────────────────────────────────────────────────
+
+  getProjectData: () => {
+    const { projectId, projectName, media, tracks, projectFps, projectWidth, projectHeight } =
+      get();
+    return {
+      id: projectId,
+      name: projectName,
+      media,
+      tracks,
+      fps: projectFps,
+      width: projectWidth,
+      height: projectHeight,
+    };
+  },
+
+  setFilePath: (path) => set({ filePath: path }),
+
+  markClean: () => set({ isDirty: false }),
+
+  resetProject: () => {
+    set({
+      projectId: nanoid(),
+      projectName: "Untitled Project",
+      projectFps: 30,
+      projectWidth: 1920,
+      projectHeight: 1080,
+      media: [],
+      tracks: [
+        { id: nanoid(), kind: "video", clips: [], muted: false, visible: true },
+        { id: nanoid(), kind: "audio", clips: [], muted: false, visible: true },
+      ],
+      undoStack: [],
+      redoStack: [],
+      filePath: null,
+      isDirty: false,
+    });
+  },
 
   // ── Undo / Redo ───────────────────────────────────────────────────────────
 
@@ -131,6 +176,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         ...s.redoStack,
         { media: structuredClone(media), tracks: structuredClone(tracks) },
       ],
+      isDirty: true,
     }));
   },
 
@@ -146,6 +192,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         ...s.undoStack,
         { media: structuredClone(media), tracks: structuredClone(tracks) },
       ],
+      isDirty: true,
     }));
   },
 
@@ -153,7 +200,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   addMedia: (items) => {
     get().pushSnapshot();
-    set((s) => ({ media: [...s.media, ...items] }));
+    set((s) => ({ media: [...s.media, ...items], isDirty: true }));
   },
 
   removeMedia: (id) => {
@@ -165,6 +212,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         ...t,
         clips: t.clips.filter((c) => c.mediaId !== id),
       })),
+      isDirty: true,
     }));
   },
 
@@ -177,13 +225,14 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     get().pushSnapshot();
     set((s) => ({
       tracks: [...s.tracks, { id, kind, clips: [], muted: false, visible: true }],
+      isDirty: true,
     }));
     return id;
   },
 
   removeTrack: (id) => {
     get().pushSnapshot();
-    set((s) => ({ tracks: s.tracks.filter((t) => t.id !== id) }));
+    set((s) => ({ tracks: s.tracks.filter((t) => t.id !== id), isDirty: true }));
   },
 
   toggleTrackMute: (id) =>
@@ -200,6 +249,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         tracks: s.tracks.map((t) => (t.id === id ? { ...t, muted: !t.muted } : t)),
         undoStack,
         redoStack: [],
+        isDirty: true,
       };
     }),
 
@@ -217,6 +267,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         tracks: s.tracks.map((t) => (t.id === id ? { ...t, visible: !t.visible } : t)),
         undoStack,
         redoStack: [],
+        isDirty: true,
       };
     }),
 
@@ -245,6 +296,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       tracks: s.tracks.map((t) =>
         t.id === trackId ? { ...t, clips: sortClips([...t.clips, newClip]) } : t,
       ),
+      isDirty: true,
     }));
     return clipId;
   },
@@ -291,6 +343,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         }
         return t;
       }),
+      isDirty: true,
     }));
     return true;
   },
@@ -332,6 +385,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
             : c,
         ),
       })),
+      isDirty: true,
     }));
   },
 
@@ -379,6 +433,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
             }
           : t,
       ),
+      isDirty: true,
     }));
   },
 
@@ -389,6 +444,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
         ...t,
         clips: t.clips.filter((c) => c.id !== clipId),
       })),
+      isDirty: true,
     }));
   },
 
@@ -423,9 +479,10 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   // ── Project save/load ─────────────────────────────────────────────────────
 
-  loadProject: (data) => {
+  loadProject: (data, filePath) => {
     set({
-      projectName: data.projectName,
+      projectId: data.id,
+      projectName: data.name,
       media: data.media,
       tracks: data.tracks,
       projectFps: data.fps,
@@ -433,6 +490,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       projectHeight: data.height,
       undoStack: [],
       redoStack: [],
+      filePath,
+      isDirty: false,
     });
   },
 }));

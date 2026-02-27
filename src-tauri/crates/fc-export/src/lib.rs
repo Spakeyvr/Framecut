@@ -14,6 +14,10 @@ pub struct ClipRef {
     pub has_audio: bool,
 }
 
+fn default_format() -> String {
+    "mp4".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportRequest {
     pub clips: Vec<ClipRef>,
@@ -24,6 +28,24 @@ pub struct ExportRequest {
     pub codec: String,
     pub crf: u32,
     pub audio_bitrate: String,
+    #[serde(default = "default_format")]
+    pub format: String,
+}
+
+fn validate_codec_format(codec: &str, format: &str) -> Result<(), String> {
+    let valid = match format {
+        "mp4" => matches!(codec, "libx264" | "libx265"),
+        "webm" => matches!(codec, "libvpx-vp9" | "libaom-av1"),
+        "mkv" => matches!(codec, "libx264" | "libx265" | "libvpx-vp9" | "libaom-av1"),
+        _ => false,
+    };
+    if !valid {
+        return Err(format!(
+            "Codec '{}' is not compatible with format '{}'",
+            codec, format
+        ));
+    }
+    Ok(())
 }
 
 /// Build an FFmpeg concat file and command for the export.
@@ -108,11 +130,32 @@ fn build_ffmpeg_args(
         args.extend(["-map".to_string(), "[outa]".to_string()]);
     }
 
+    // Validate codec-format compatibility
+    validate_codec_format(&request.codec, &request.format)?;
+
+    args.extend(["-c:v".to_string(), request.codec.clone()]);
+
+    // Codec-specific encoding flags
+    match request.codec.as_str() {
+        "libx264" | "libx265" => {
+            args.extend(["-preset".to_string(), "medium".to_string()]);
+        }
+        "libvpx-vp9" => {
+            args.extend([
+                "-b:v".to_string(), "0".to_string(),
+                "-speed".to_string(), "2".to_string(),
+            ]);
+        }
+        "libaom-av1" => {
+            args.extend([
+                "-b:v".to_string(), "0".to_string(),
+                "-cpu-used".to_string(), "4".to_string(),
+            ]);
+        }
+        _ => {}
+    }
+
     args.extend([
-        "-c:v".to_string(),
-        request.codec.clone(),
-        "-preset".to_string(),
-        "medium".to_string(),
         "-crf".to_string(),
         request.crf.to_string(),
         "-r".to_string(),
@@ -120,15 +163,23 @@ fn build_ffmpeg_args(
     ]);
 
     if include_audio {
+        let audio_codec = match request.format.as_str() {
+            "webm" => "libopus",
+            _ => "aac",
+        };
         args.extend([
             "-c:a".to_string(),
-            "aac".to_string(),
+            audio_codec.to_string(),
             "-b:a".to_string(),
             request.audio_bitrate.clone(),
         ]);
     }
 
-    args.extend(["-movflags".to_string(), "+faststart".to_string()]);
+    // MP4-specific: move moov atom for streaming
+    if request.format == "mp4" {
+        args.extend(["-movflags".to_string(), "+faststart".to_string()]);
+    }
+
     args.push(request.output_path.clone());
 
     Ok((args, String::new()))

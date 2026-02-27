@@ -78,6 +78,10 @@ pub struct ClipRef {
     pub has_audio: bool,
 }
 
+fn default_format() -> String {
+    "mp4".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportRequest {
     pub clips: Vec<ClipRef>,
@@ -88,6 +92,8 @@ pub struct ExportRequest {
     pub codec: String,
     pub crf: u32,
     pub audio_bitrate: String,
+    #[serde(default = "default_format")]
+    pub format: String,
 }
 
 // ── Project commands ──────────────────────────────────────────────────────────

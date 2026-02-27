@@ -23,6 +23,9 @@ interface NativeClipRef {
   key: string;
   mediaPath: string;
   mediaType: PreviewMediaType;
+  hasAudio: boolean;
+  trackMuted: boolean;
+  trackKind: "video" | "audio";
   sourceStart: number;
   sourceEnd: number;
   timelineStart: number;
@@ -125,6 +128,8 @@ export function PreviewPanel() {
   const nativeVideoPathRef = useRef<string>("");
   const nativeClipKeyRef = useRef<string | null>(null);
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
+  const activeAudioRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+  const nativeClipsRef = useRef<NativeClipRef[]>([]);
 
   const activeTier = PREVIEW_TIERS[previewTier];
 
@@ -164,6 +169,9 @@ export function PreviewPanel() {
           key: `${mediaItem.path}|${clip.timelineStart.toFixed(6)}|${clip.sourceStart.toFixed(6)}|${clip.sourceEnd.toFixed(6)}`,
           mediaPath: mediaItem.path,
           mediaType: mediaItem.type as PreviewMediaType,
+          hasAudio: mediaItem.hasAudio,
+          trackMuted: track.muted,
+          trackKind: track.kind,
           sourceStart: clip.sourceStart,
           sourceEnd: clip.sourceEnd,
           timelineStart: clip.timelineStart,
@@ -177,6 +185,10 @@ export function PreviewPanel() {
       nativeClips: nativeRefs,
     };
   }, [tracks, media]);
+
+  useEffect(() => {
+    nativeClipsRef.current = nativeClips;
+  }, [nativeClips]);
 
   const findActiveClip = useCallback(
     (time: number) => {
@@ -378,10 +390,12 @@ export function PreviewPanel() {
       }
 
       if (forPlayback) {
+        video.muted = !clip.hasAudio || clip.trackMuted;
         if (video.paused) {
           await video.play().catch(() => undefined);
         }
       } else {
+        video.muted = true;
         video.pause();
       }
 
@@ -431,6 +445,57 @@ export function PreviewPanel() {
       }
     },
     [clearCanvas, drawCanvasSource, findActiveClip, loadImage, syncVideoToClip],
+  );
+
+  const syncAudioPlayback = useCallback(
+    (time: number, playing: boolean) => {
+      const pool = activeAudioRef.current;
+      const clips = nativeClipsRef.current;
+
+      if (!playing) {
+        for (const el of pool.values()) {
+          if (!el.paused) el.pause();
+        }
+        return;
+      }
+
+      // Find all audio-track clips that should be playing at this time
+      const activeKeys = new Set<string>();
+      for (const clip of clips) {
+        if (clip.trackKind !== "audio") continue;
+        if (clip.trackMuted) continue;
+        if (time < clip.timelineStart || time >= clip.timelineEnd) continue;
+        // Skip if already handled by the native video element
+        if (clip.key === nativeClipKeyRef.current) continue;
+
+        activeKeys.add(clip.key);
+        let el = pool.get(clip.key);
+        if (!el) {
+          el = new Audio();
+          el.src = convertFileSrc(clip.mediaPath);
+          el.preload = "auto";
+          pool.set(clip.key, el);
+        }
+
+        const sourceTime = clip.sourceStart + (time - clip.timelineStart);
+        const drift = Math.abs(el.currentTime - sourceTime);
+        if (drift > 0.3) {
+          el.currentTime = sourceTime;
+        }
+        if (el.paused) {
+          el.play().catch(() => {});
+        }
+      }
+
+      // Pause and clean up elements for clips no longer active
+      for (const [key, el] of pool.entries()) {
+        if (!activeKeys.has(key)) {
+          el.pause();
+          pool.delete(key);
+        }
+      }
+    },
+    [],
   );
 
   const doSeek = useCallback(
@@ -551,6 +616,8 @@ export function PreviewPanel() {
     if (!isPlaying) {
       overloadSinceRef.current = null;
       nativeVideoRef.current?.pause();
+      if (nativeVideoRef.current) nativeVideoRef.current.muted = true;
+      syncAudioPlayback(0, false);
       if (previewTier !== 0) {
         setPreviewTier(0);
         activeTierRef.current = 0;
@@ -583,6 +650,7 @@ export function PreviewPanel() {
         }
 
         queueSeek(nextTime);
+        syncAudioPlayback(nextTime, true);
         if (now - lastUiSyncTs >= PLAYHEAD_UI_SYNC_MS) {
           lastUiSyncTs = now;
           setPlayheadTime(nextTime);
@@ -597,8 +665,9 @@ export function PreviewPanel() {
       pendingSeekRef.current = null;
       setPlayheadTime(playbackTime);
       cancelAnimationFrame(animFrameId);
+      syncAudioPlayback(0, false);
     };
-  }, [isPlaying, previewTier, queueSeek, getTimelineEnd, setIsPlaying, setPlayheadTime]);
+  }, [isPlaying, previewTier, queueSeek, syncAudioPlayback, getTimelineEnd, setIsPlaying, setPlayheadTime]);
 
   useEffect(() => {
     clearCanvas(activeTier.width, activeTier.height);
@@ -609,6 +678,11 @@ export function PreviewPanel() {
       nativeVideoRef.current?.pause();
       nativeVideoRef.current = null;
       imageCacheRef.current.clear();
+      for (const el of activeAudioRef.current.values()) {
+        el.pause();
+        el.src = "";
+      }
+      activeAudioRef.current.clear();
     },
     [],
   );

@@ -4,8 +4,18 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { useUIStore } from "../../stores/ui-store";
 import { useProjectStore } from "../../stores/project-store";
 import { startExport, cancelExport } from "../../api/commands";
-import { EXPORT_PRESETS } from "../../types";
-import type { ClipRef } from "../../types";
+import {
+  EXPORT_PRESETS,
+  RESOLUTIONS,
+  CODECS,
+  FORMATS,
+  QUALITY_LEVELS,
+  FRAME_RATES,
+  getCrfForCodec,
+} from "../../types";
+import type { ClipRef, ExportFormat } from "../../types";
+
+const DEFAULT_PRESET = EXPORT_PRESETS[0];
 
 export function ExportDialog() {
   const setShowExportDialog = useUIStore((s) => s.setShowExportDialog);
@@ -13,15 +23,112 @@ export function ExportDialog() {
   const media = useProjectStore((s) => s.media);
   const projectFps = useProjectStore((s) => s.projectFps);
 
-  const [selectedPresetId, setSelectedPresetId] = useState(EXPORT_PRESETS[0].id);
+  // Detect the max FPS from video clips on the timeline
+  const detectedFps = (() => {
+    let maxFps = 0;
+    for (const track of tracks) {
+      for (const clip of track.clips) {
+        const m = media.find((item) => item.id === clip.mediaId);
+        if (m && m.type === "video" && m.fps > maxFps) {
+          maxFps = m.fps;
+        }
+      }
+    }
+    return maxFps > 0 ? maxFps : projectFps;
+  })();
+
+  // Find the closest standard frame rate, or use the exact value
+  const defaultFps = FRAME_RATES.find((fr) => fr.value === Math.round(detectedFps))?.value
+    ?? Math.round(detectedFps);
+
+  // Preset & individual settings state
+  const [selectedPresetId, setSelectedPresetId] = useState<string | "custom">(
+    DEFAULT_PRESET.id,
+  );
+  const [format, setFormat] = useState<ExportFormat>(DEFAULT_PRESET.format);
+  const [resolutionIndex, setResolutionIndex] = useState(
+    RESOLUTIONS.findIndex(
+      (r) => r.width === DEFAULT_PRESET.width && r.height === DEFAULT_PRESET.height,
+    ),
+  );
+  const [codecId, setCodecId] = useState(DEFAULT_PRESET.codec);
+  const [qualityIndex, setQualityIndex] = useState(1); // "High"
+  const [fps, setFps] = useState(defaultFps);
+
+  // Export progress state
   const [exporting, setExporting] = useState(false);
   const [progress, setProgress] = useState(0);
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const currentJobIdRef = useRef<string | null>(null);
 
-  const preset =
-    EXPORT_PRESETS.find((p) => p.id === selectedPresetId) ?? EXPORT_PRESETS[0];
+  // Derived values
+  const formatDef = FORMATS.find((f) => f.id === format)!;
+  const availableCodecs = CODECS.filter((c) =>
+    (c.formats as readonly string[]).includes(format),
+  );
+  const resolution = RESOLUTIONS[resolutionIndex];
+
+  // ── Preset handler ──────────────────────────────────────────────────────────
+
+  const handlePresetChange = (presetId: string) => {
+    if (presetId === "custom") {
+      setSelectedPresetId("custom");
+      return;
+    }
+    const preset = EXPORT_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+
+    setSelectedPresetId(presetId);
+    setFormat(preset.format);
+    setCodecId(preset.codec);
+
+    const resIdx = RESOLUTIONS.findIndex(
+      (r) => r.width === preset.width && r.height === preset.height,
+    );
+    if (resIdx >= 0) setResolutionIndex(resIdx);
+
+    // Find the closest quality level for this codec/crf
+    const crfs = QUALITY_LEVELS.map((_q, i) => ({
+      i,
+      diff: Math.abs(getCrfForCodec(i, preset.codec) - preset.crf),
+    }));
+    crfs.sort((a, b) => a.diff - b.diff);
+    setQualityIndex(crfs[0].i);
+  };
+
+  // ── Individual field handlers ───────────────────────────────────────────────
+
+  const handleFormatChange = (newFormat: ExportFormat) => {
+    setFormat(newFormat);
+    setSelectedPresetId("custom");
+    const fmtDef = FORMATS.find((f) => f.id === newFormat);
+    if (fmtDef && !(fmtDef.codecs as readonly string[]).includes(codecId)) {
+      setCodecId(fmtDef.codecs[0]);
+    }
+  };
+
+  const handleCodecChange = (newCodec: string) => {
+    setCodecId(newCodec);
+    setSelectedPresetId("custom");
+  };
+
+  const handleResolutionChange = (index: number) => {
+    setResolutionIndex(index);
+    setSelectedPresetId("custom");
+  };
+
+  const handleQualityChange = (index: number) => {
+    setQualityIndex(index);
+    setSelectedPresetId("custom");
+  };
+
+  const handleFpsChange = (value: number) => {
+    setFps(value);
+    setSelectedPresetId("custom");
+  };
+
+  // ── Event listeners ─────────────────────────────────────────────────────────
 
   useEffect(() => {
     currentJobIdRef.current = jobId;
@@ -31,17 +138,21 @@ export function ExportDialog() {
     const unlisten1 = listen<{ jobId: string; progress: number }>(
       "export-progress",
       (event) => {
-        if (!currentJobIdRef.current || event.payload.jobId !== currentJobIdRef.current) {
+        if (
+          !currentJobIdRef.current ||
+          event.payload.jobId !== currentJobIdRef.current
+        )
           return;
-        }
         setProgress(event.payload.progress);
       },
     );
 
     const unlisten2 = listen<{ jobId: string }>("export-done", (event) => {
-      if (!currentJobIdRef.current || event.payload.jobId !== currentJobIdRef.current) {
+      if (
+        !currentJobIdRef.current ||
+        event.payload.jobId !== currentJobIdRef.current
+      )
         return;
-      }
       setExporting(false);
       setProgress(1);
     });
@@ -49,9 +160,11 @@ export function ExportDialog() {
     const unlisten3 = listen<{ jobId: string; error: string }>(
       "export-error",
       (event) => {
-        if (!currentJobIdRef.current || event.payload.jobId !== currentJobIdRef.current) {
+        if (
+          !currentJobIdRef.current ||
+          event.payload.jobId !== currentJobIdRef.current
+        )
           return;
-        }
         setError(event.payload.error);
         setExporting(false);
       },
@@ -71,10 +184,11 @@ export function ExportDialog() {
         setShowExportDialog(false);
       }
     };
-
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [exporting, setShowExportDialog]);
+
+  // ── Export action ───────────────────────────────────────────────────────────
 
   const handleExport = async () => {
     setError(null);
@@ -101,8 +215,8 @@ export function ExportDialog() {
     }
 
     const outputPath = await save({
-      filters: [{ name: "MP4 Video", extensions: ["mp4"] }],
-      defaultPath: "output.mp4",
+      filters: [{ name: formatDef.label, extensions: [formatDef.extension] }],
+      defaultPath: `output.${formatDef.extension}`,
     });
     if (!outputPath) return;
 
@@ -111,16 +225,20 @@ export function ExportDialog() {
     setJobId(null);
     currentJobIdRef.current = null;
 
+    const crf = getCrfForCodec(qualityIndex, codecId);
+    const audioBitrate = format === "webm" ? "128k" : "192k";
+
     try {
       const id = await startExport({
         clips: clipRefs,
         outputPath,
-        width: preset.width,
-        height: preset.height,
-        fps: projectFps,
-        codec: preset.codec,
-        crf: preset.crf,
-        audioBitrate: preset.audioBitrate,
+        width: resolution.width,
+        height: resolution.height,
+        fps,
+        codec: codecId,
+        crf,
+        audioBitrate,
+        format,
       });
       setJobId(id);
       currentJobIdRef.current = id;
@@ -137,6 +255,8 @@ export function ExportDialog() {
     setShowExportDialog(false);
   };
 
+  // ── Render ──────────────────────────────────────────────────────────────────
+
   return (
     <div
       className="modal-overlay"
@@ -146,16 +266,21 @@ export function ExportDialog() {
         }
       }}
     >
-      <div className="modal-dialog export-dialog" role="dialog" aria-modal="true">
+      <div
+        className="modal-dialog export-dialog"
+        role="dialog"
+        aria-modal="true"
+      >
         <div className="modal-header">
           <h2>Export Video</h2>
         </div>
 
+        {/* Preset quick-pick */}
         <div className="export-field">
           <label>Preset</label>
           <select
             value={selectedPresetId}
-            onChange={(e) => setSelectedPresetId(e.target.value)}
+            onChange={(e) => handlePresetChange(e.target.value)}
             disabled={exporting}
           >
             {EXPORT_PRESETS.map((p) => (
@@ -163,6 +288,96 @@ export function ExportDialog() {
                 {p.label}
               </option>
             ))}
+            <option value="custom">Custom</option>
+          </select>
+        </div>
+
+        <div className="export-separator" />
+
+        {/* Format & Resolution side by side */}
+        <div className="export-fields-row">
+          <div className="export-field">
+            <label>Format</label>
+            <select
+              value={format}
+              onChange={(e) => handleFormatChange(e.target.value as ExportFormat)}
+              disabled={exporting}
+            >
+              {FORMATS.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="export-field">
+            <label>Resolution</label>
+            <select
+              value={resolutionIndex}
+              onChange={(e) => handleResolutionChange(Number(e.target.value))}
+              disabled={exporting}
+            >
+              {RESOLUTIONS.map((r, i) => (
+                <option key={i} value={i}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Codec & Quality side by side */}
+        <div className="export-fields-row">
+          <div className="export-field">
+            <label>Codec</label>
+            <select
+              value={codecId}
+              onChange={(e) => handleCodecChange(e.target.value)}
+              disabled={exporting}
+            >
+              {availableCodecs.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="export-field">
+            <label>Quality</label>
+            <select
+              value={qualityIndex}
+              onChange={(e) => handleQualityChange(Number(e.target.value))}
+              disabled={exporting}
+            >
+              {QUALITY_LEVELS.map((q, i) => (
+                <option key={i} value={i}>
+                  {q.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Frame Rate */}
+        <div className="export-field">
+          <label>Frame Rate</label>
+          <select
+            value={fps}
+            onChange={(e) => handleFpsChange(Number(e.target.value))}
+            disabled={exporting}
+          >
+            {FRAME_RATES.map((fr) => (
+              <option key={fr.value} value={fr.value}>
+                {fr.label}{fr.value === defaultFps ? " (source)" : ""}
+              </option>
+            ))}
+            {!FRAME_RATES.some((fr) => fr.value === defaultFps) && (
+              <option value={defaultFps}>
+                {defaultFps} fps (source)
+              </option>
+            )}
           </select>
         </div>
 
@@ -189,7 +404,10 @@ export function ExportDialog() {
             {exporting ? "Cancel" : "Close"}
           </button>
           {!exporting && progress < 1 && (
-            <button className="toolbar-btn toolbar-btn--accent" onClick={handleExport}>
+            <button
+              className="toolbar-btn toolbar-btn--accent"
+              onClick={handleExport}
+            >
               Export
             </button>
           )}

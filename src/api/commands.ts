@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { open, save } from "@tauri-apps/plugin-dialog";
+import { open, save, confirm } from "@tauri-apps/plugin-dialog";
 import type { MediaItem, ClipRef } from "../types";
 
 // ── FFmpeg check ─────────────────────────────────────────────────────────────
@@ -10,14 +10,18 @@ export const checkFfmpeg = () => invoke<void>("check_ffmpeg");
 
 export const createProject = (name: string) => invoke<string>("create_project", { name });
 
-export const openProjectFile = async (): Promise<string | null> => {
-  const path = await open({
+export const openProjectFile = async (): Promise<{
+  path: string;
+  content: string;
+} | null> => {
+  const selected = await open({
     filters: [{ name: "FrameCut Project", extensions: ["fcproj"] }],
   });
-  if (!path) return null;
+  if (!selected) return null;
   // open() returns string | string[] | null in @tauri-apps/plugin-dialog v2
-  const filePath = Array.isArray(path) ? path[0] : path;
-  return invoke<string>("open_project", { path: filePath });
+  const filePath = Array.isArray(selected) ? selected[0] : selected;
+  const content = await invoke<string>("open_project", { path: filePath });
+  return { path: filePath, content };
 };
 
 export const saveProject = (path: string, data: string) =>
@@ -31,6 +35,14 @@ export const saveProjectDialog = async (data: string): Promise<string | null> =>
   await saveProject(path, data);
   return path;
 };
+
+export const confirmUnsavedChanges = (): Promise<boolean> =>
+  confirm("You have unsaved changes. Do you want to continue without saving?", {
+    title: "Unsaved Changes",
+    kind: "warning",
+    okLabel: "Continue",
+    cancelLabel: "Cancel",
+  });
 
 // ── Media ────────────────────────────────────────────────────────────────────
 
@@ -130,6 +142,7 @@ export interface ExportRequestPayload {
   codec: string;
   crf: number;
   audioBitrate: string;
+  format: string;
 }
 
 export const startExport = async (payload: ExportRequestPayload): Promise<string> => {
@@ -148,6 +161,7 @@ export const startExport = async (payload: ExportRequestPayload): Promise<string
     codec: payload.codec,
     crf: payload.crf,
     audio_bitrate: payload.audioBitrate,
+    format: payload.format,
   };
   const json = await invoke<string>("start_export", { request });
   const result = JSON.parse(json);
