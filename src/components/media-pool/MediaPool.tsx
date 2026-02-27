@@ -2,7 +2,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { useProjectStore } from "../../stores/project-store";
 import { useUIStore } from "../../stores/ui-store";
 import { importMediaDialog } from "../../api/commands";
-import { MEDIA_DND_MIME, MEDIA_DND_TEXT_PREFIX } from "../../constants/dnd";
+import { MEDIA_DND_MIME, MEDIA_DND_TEXT_PREFIX, setDragMediaType } from "../../constants/dnd";
 import type { MediaItem } from "../../types";
 
 function formatDuration(seconds: number): string {
@@ -23,6 +23,11 @@ function MediaCard({ item }: { item: MediaItem }) {
     e.dataTransfer.setData("text/plain", fallback);
     e.dataTransfer.setData("text", fallback);
     e.dataTransfer.effectAllowed = "copy";
+    setDragMediaType(item.type);
+  };
+
+  const handleDragEnd = () => {
+    setDragMediaType(null);
   };
 
   // Double-click: add clip to first matching track at playhead
@@ -39,6 +44,7 @@ function MediaCard({ item }: { item: MediaItem }) {
       className="media-item"
       draggable
       onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
       onDoubleClick={handleDoubleClick}
     >
       {item.thumbnailPath ? (

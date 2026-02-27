@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::process::Stdio;
 use std::time::Instant;
+use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClipRef {
@@ -41,13 +42,15 @@ fn decode_frame_with_metrics(
     width: u32,
     height: u32,
 ) -> Result<PreviewDecodeResult, String> {
+    let seek_time = if is_image_path(path) { 0.0 } else { time.max(0.0) };
+
     let started_at = Instant::now();
     let child = fc_ffmpeg::ffmpeg_command()
         .args([
             "-hwaccel",
             "auto",
             "-ss",
-            &format!("{time:.3}"),
+            &format!("{seek_time:.3}"),
             "-i",
             path,
             "-an",
@@ -88,6 +91,25 @@ fn decode_frame_with_metrics(
         frame: output.stdout,
         metrics: DecodeMetrics { spawn_ms, total_ms },
     })
+}
+
+fn is_image_path(path: &str) -> bool {
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase());
+
+    matches!(
+        ext.as_deref(),
+        Some("png")
+            | Some("jpg")
+            | Some("jpeg")
+            | Some("bmp")
+            | Some("gif")
+            | Some("webp")
+            | Some("tif")
+            | Some("tiff")
+    )
 }
 
 /// Given a set of timeline clips and a time, find which clip is active and decode

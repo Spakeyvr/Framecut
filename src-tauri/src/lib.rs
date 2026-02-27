@@ -322,6 +322,10 @@ async fn start_export(
         } else {
             let _ = app.emit("export-done", serde_json::json!({ "jobId": job_id_clone }));
         }
+
+        if let Ok(mut jobs) = app.state::<AppState>().export_jobs.lock() {
+            jobs.remove(&job_id_clone);
+        }
     });
 
     Ok(serde_json::json!({ "jobId": job_id }).to_string())

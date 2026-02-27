@@ -61,6 +61,7 @@ export function ExportDialog() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const currentJobIdRef = useRef<string | null>(null);
+  const exportingRef = useRef(false);
 
   // Derived values
   const formatDef = FORMATS.find((f) => f.id === format)!;
@@ -135,24 +136,31 @@ export function ExportDialog() {
   }, [jobId]);
 
   useEffect(() => {
+    exportingRef.current = exporting;
+  }, [exporting]);
+
+  useEffect(() => {
+    const resolveActiveJob = (incomingJobId: string): string | null => {
+      if (!currentJobIdRef.current) {
+        if (!exportingRef.current) return null;
+        currentJobIdRef.current = incomingJobId;
+        setJobId(incomingJobId);
+      }
+      return currentJobIdRef.current;
+    };
+
     const unlisten1 = listen<{ jobId: string; progress: number }>(
       "export-progress",
       (event) => {
-        if (
-          !currentJobIdRef.current ||
-          event.payload.jobId !== currentJobIdRef.current
-        )
-          return;
+        const activeJob = resolveActiveJob(event.payload.jobId);
+        if (!activeJob || event.payload.jobId !== activeJob) return;
         setProgress(event.payload.progress);
       },
     );
 
     const unlisten2 = listen<{ jobId: string }>("export-done", (event) => {
-      if (
-        !currentJobIdRef.current ||
-        event.payload.jobId !== currentJobIdRef.current
-      )
-        return;
+      const activeJob = resolveActiveJob(event.payload.jobId);
+      if (!activeJob || event.payload.jobId !== activeJob) return;
       setExporting(false);
       setProgress(1);
     });
@@ -160,11 +168,8 @@ export function ExportDialog() {
     const unlisten3 = listen<{ jobId: string; error: string }>(
       "export-error",
       (event) => {
-        if (
-          !currentJobIdRef.current ||
-          event.payload.jobId !== currentJobIdRef.current
-        )
-          return;
+        const activeJob = resolveActiveJob(event.payload.jobId);
+        if (!activeJob || event.payload.jobId !== activeJob) return;
         setError(event.payload.error);
         setExporting(false);
       },
@@ -240,8 +245,10 @@ export function ExportDialog() {
         audioBitrate,
         format,
       });
-      setJobId(id);
-      currentJobIdRef.current = id;
+      if (!currentJobIdRef.current || currentJobIdRef.current === id) {
+        setJobId(id);
+        currentJobIdRef.current = id;
+      }
     } catch (err) {
       setError(String(err));
       setExporting(false);

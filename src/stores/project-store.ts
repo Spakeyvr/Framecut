@@ -3,6 +3,17 @@ import { nanoid } from "nanoid";
 import type { MediaItem, Clip, Track, TrackKind, Project } from "../types";
 import { clipEnd } from "../types";
 
+const DEFAULT_IMAGE_CLIP_DURATION = 5;
+const STILL_IMAGE_EXTENSIONS = new Set([
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".bmp",
+  ".webp",
+  ".tif",
+  ".tiff",
+]);
+
 // ── Undo / Redo snapshot types ────────────────────────────────────────────────
 
 interface Snapshot {
@@ -87,6 +98,18 @@ function wouldOverlap(clip: Clip, track: Track, excludeClipId?: string): boolean
 
 function sortClips(clips: Clip[]): Clip[] {
   return [...clips].sort((a, b) => a.timelineStart - b.timelineStart);
+}
+
+function hasStillImageExtension(path: string): boolean {
+  const lower = path.toLowerCase();
+  for (const ext of STILL_IMAGE_EXTENSIONS) {
+    if (lower.endsWith(ext)) return true;
+  }
+  return false;
+}
+
+function isStillImageMedia(mediaItem: MediaItem): boolean {
+  return mediaItem.type === "image" || hasStillImageExtension(mediaItem.path);
 }
 
 // ── Store ─────────────────────────────────────────────────────────────────────
@@ -280,13 +303,17 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     if (!track || !mediaItem) return null;
 
     const clipId = nanoid();
+    const initialDuration = isStillImageMedia(mediaItem)
+      ? Math.max(DEFAULT_IMAGE_CLIP_DURATION, mediaItem.duration, 0.1)
+      : Math.max(mediaItem.duration, 0.1);
+
     const newClip: Clip = {
       id: clipId,
       mediaId,
       trackId,
       timelineStart: Math.max(0, timelineStart),
       sourceStart: 0,
-      sourceEnd: mediaItem.duration,
+      sourceEnd: initialDuration,
     };
 
     if (wouldOverlap(newClip, track)) return null;
@@ -359,6 +386,59 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
     const mediaItem = media.find((m) => m.id === clip!.mediaId);
     if (!mediaItem) return;
+
+    if (isStillImageMedia(mediaItem)) {
+      // Images have no intrinsic timeline to seek through; treat sourceEnd as duration.
+      const currentDuration = Math.max(0.1, clip.sourceEnd - clip.sourceStart);
+
+      if (newSourceStart !== null) {
+        const requestedDelta = newSourceStart - clip.sourceStart;
+        const maxShrinkDelta = currentDuration - 0.1;
+        const boundedDelta = Math.min(requestedDelta, maxShrinkDelta);
+        const proposedTimelineStart = clip.timelineStart + boundedDelta;
+        const clampedTimelineStart = Math.max(0, proposedTimelineStart);
+        const actualDelta = clampedTimelineStart - clip.timelineStart;
+        const nextDuration = Math.max(0.1, currentDuration - actualDelta);
+
+        set((s) => ({
+          tracks: s.tracks.map((t) => ({
+            ...t,
+            clips: t.clips.map((c) =>
+              c.id === clipId
+                ? {
+                    ...c,
+                    sourceStart: 0,
+                    sourceEnd: nextDuration,
+                    timelineStart: clampedTimelineStart,
+                  }
+                : c,
+            ),
+          })),
+          isDirty: true,
+        }));
+        return;
+      }
+
+      if (newSourceEnd !== null) {
+        const nextDuration = Math.max(0.1, newSourceEnd - clip.sourceStart);
+        set((s) => ({
+          tracks: s.tracks.map((t) => ({
+            ...t,
+            clips: t.clips.map((c) =>
+              c.id === clipId
+                ? {
+                    ...c,
+                    sourceStart: 0,
+                    sourceEnd: nextDuration,
+                  }
+                : c,
+            ),
+          })),
+          isDirty: true,
+        }));
+      }
+      return;
+    }
 
     const ss = newSourceStart !== null ? newSourceStart : clip.sourceStart;
     const se = newSourceEnd !== null ? newSourceEnd : clip.sourceEnd;

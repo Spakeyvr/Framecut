@@ -75,7 +75,13 @@ fn build_ffmpeg_args(
 
     // Build a concat-style filter complex
     // For each clip: input with -ss and -t, then scale+pad to output resolution
-    let mut args: Vec<String> = vec!["-y".to_string(), "-hide_banner".to_string()];
+    let mut args: Vec<String> = vec![
+        "-y".to_string(),
+        "-hide_banner".to_string(),
+        "-nostats".to_string(),
+        "-progress".to_string(),
+        "pipe:2".to_string(),
+    ];
     let mut filter_inputs = String::new();
 
     for (i, clip) in sorted_clips.iter().enumerate() {
@@ -83,14 +89,27 @@ fn build_ffmpeg_args(
         if duration <= 0.0 {
             return Err(format!("Clip {} has non-positive duration", i + 1));
         }
-        args.extend([
-            "-ss".to_string(),
-            format!("{:.3}", clip.source_start),
-            "-t".to_string(),
-            format!("{:.3}", duration),
-            "-i".to_string(),
-            clip.media_path.clone(),
-        ]);
+        if is_image_path(&clip.media_path) {
+            args.extend([
+                "-loop".to_string(),
+                "1".to_string(),
+                "-framerate".to_string(),
+                format!("{:.3}", request.fps),
+                "-t".to_string(),
+                format!("{:.3}", duration),
+                "-i".to_string(),
+                clip.media_path.clone(),
+            ]);
+        } else {
+            args.extend([
+                "-ss".to_string(),
+                format!("{:.3}", clip.source_start),
+                "-t".to_string(),
+                format!("{:.3}", duration),
+                "-i".to_string(),
+                clip.media_path.clone(),
+            ]);
+        }
 
         // Build filter for this input: scale and pad to target resolution
         filter_inputs.push_str(&format!(
@@ -229,26 +248,37 @@ pub async fn run_export(
                         }
                         stderr_tail.push_back(text.clone());
 
-                        // Parse ffmpeg progress: look for "time=HH:MM:SS.ms"
-                        if let Some(pos) = text.find("time=") {
+                        // Parse ffmpeg progress from either -progress output or status lines.
+                        let progress_secs = if let Some(value) = text.strip_prefix("out_time_ms=")
+                        {
+                            value
+                                .trim()
+                                .parse::<f64>()
+                                .ok()
+                                .map(|microseconds| microseconds / 1_000_000.0)
+                        } else if let Some(value) = text.strip_prefix("out_time=") {
+                            parse_ffmpeg_time(value.trim())
+                        } else if let Some(pos) = text.find("time=") {
                             let time_str = &text[pos + 5..];
-                            if let Some(end) = time_str.find(' ') {
-                                let time_val = &time_str[..end];
-                                if let Some(secs) = parse_ffmpeg_time(time_val) {
-                                    let progress = if total_duration > 0.0 {
-                                        (secs / total_duration).min(1.0)
-                                    } else {
-                                        0.0
-                                    };
-                                    let _ = app.emit(
-                                        "export-progress",
-                                        serde_json::json!({
-                                            "jobId": job_id_owned,
-                                            "progress": progress
-                                        }),
-                                    );
-                                }
-                            }
+                            let token = time_str.split_whitespace().next().unwrap_or(time_str);
+                            parse_ffmpeg_time(token.trim())
+                        } else {
+                            None
+                        };
+
+                        if let Some(secs) = progress_secs {
+                            let progress = if total_duration > 0.0 {
+                                (secs / total_duration).min(1.0)
+                            } else {
+                                0.0
+                            };
+                            let _ = app.emit(
+                                "export-progress",
+                                serde_json::json!({
+                                    "jobId": job_id_owned,
+                                    "progress": progress
+                                }),
+                            );
                         }
                     }
                     Ok(None) => break, // EOF
@@ -293,6 +323,25 @@ fn parse_ffmpeg_time(s: &str) -> Option<f64> {
     } else {
         s.parse().ok()
     }
+}
+
+fn is_image_path(path: &str) -> bool {
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase());
+
+    matches!(
+        ext.as_deref(),
+        Some("png")
+            | Some("jpg")
+            | Some("jpeg")
+            | Some("bmp")
+            | Some("gif")
+            | Some("webp")
+            | Some("tif")
+            | Some("tiff")
+    )
 }
 
 fn paths_refer_to_same_file(a: &str, b: &str) -> bool {

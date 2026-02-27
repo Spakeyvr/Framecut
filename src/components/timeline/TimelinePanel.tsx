@@ -1,4 +1,4 @@
-import { useRef, useCallback } from "react";
+import { useRef, useCallback, useEffect } from "react";
 import { useProjectStore } from "../../stores/project-store";
 import { useUIStore } from "../../stores/ui-store";
 import { TimeRuler } from "./TimeRuler";
@@ -12,10 +12,12 @@ export function TimelinePanel() {
   const scrollX = useUIStore((s) => s.timelineScrollX);
   const setScrollX = useUIStore((s) => s.setTimelineScrollX);
   const playheadTime = useUIStore((s) => s.playheadTime);
+  const setPlayheadTime = useUIStore((s) => s.setPlayheadTime);
   const setSelectedClipId = useUIStore((s) => s.setSelectedClipId);
   const getTimelineEnd = useProjectStore((s) => s.getTimelineEnd);
 
   const tracksAreaRef = useRef<HTMLDivElement>(null);
+  const isScrubbingRef = useRef(false);
 
   // Total content width = max of (timeline end + 30s buffer) * zoom, or viewport width
   const contentWidth = Math.max((getTimelineEnd() + 30) * zoom, 2000);
@@ -39,6 +41,38 @@ export function TimelinePanel() {
     if (!tracksAreaRef.current) return;
     setScrollX(tracksAreaRef.current.scrollLeft);
   }, [setScrollX]);
+
+  const seekFromClientX = useCallback(
+    (clientX: number) => {
+      const tracksArea = tracksAreaRef.current;
+      if (!tracksArea) return;
+      const rect = tracksArea.getBoundingClientRect();
+      const x = clientX - rect.left + tracksArea.scrollLeft;
+      setPlayheadTime(Math.max(0, x / zoom));
+    },
+    [zoom, setPlayheadTime],
+  );
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isScrubbingRef.current) return;
+      seekFromClientX(e.clientX);
+    };
+
+    const stopScrub = () => {
+      if (!isScrubbingRef.current) return;
+      isScrubbingRef.current = false;
+      document.body.style.removeProperty("user-select");
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", stopScrub);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", stopScrub);
+      document.body.style.removeProperty("user-select");
+    };
+  }, [seekFromClientX]);
 
   const playheadX = playheadTime * zoom - scrollX;
 
@@ -92,6 +126,18 @@ export function TimelinePanel() {
           className="timeline-tracks-area"
           onWheel={handleWheel}
           onScroll={handleScroll}
+          onMouseDown={(e) => {
+            if (e.button !== 0) return;
+            const target = e.target as HTMLElement;
+            const clickedClip = target.closest(".clip");
+            const clickedMenu = target.closest(".context-menu");
+            if (clickedClip || clickedMenu) return;
+
+            isScrubbingRef.current = true;
+            document.body.style.userSelect = "none";
+            seekFromClientX(e.clientX);
+            e.preventDefault();
+          }}
           onClick={(e) => {
             const target = e.target as HTMLElement;
             const clickedClip = target.closest(".clip");

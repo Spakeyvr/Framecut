@@ -7,6 +7,7 @@ import {
   getTransferTypeCount,
   hasTransferType,
   readDraggedMediaId,
+  getDragMediaType,
 } from "../../constants/dnd";
 import { ClipView } from "./ClipView";
 
@@ -20,19 +21,31 @@ export function TrackLane({ track }: TrackLaneProps) {
   const scrollX = useUIStore((s) => s.timelineScrollX);
   const [isDragOver, setIsDragOver] = useState(false);
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    // Always allow drop while dragging; then validate payload on drop.
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      const hasSupportedType =
+        hasTransferType(e.dataTransfer, MEDIA_DND_MIME) ||
+        hasTransferType(e.dataTransfer, "text/plain") ||
+        hasTransferType(e.dataTransfer, "text") ||
+        getTransferTypeCount(e.dataTransfer) === 0;
 
-    // Some WebViews expose drag types via DOMStringList.contains only.
-    const hasSupportedType =
-      hasTransferType(e.dataTransfer, MEDIA_DND_MIME) ||
-      hasTransferType(e.dataTransfer, "text/plain") ||
-      hasTransferType(e.dataTransfer, "text") ||
-      getTransferTypeCount(e.dataTransfer) === 0;
-    setIsDragOver(hasSupportedType);
-  }, []);
+      // Only accept if the media kind matches this track kind.
+      const mediaType = getDragMediaType();
+      const kindMatch =
+        !mediaType ||
+        (track.kind === "video" && (mediaType === "video" || mediaType === "image")) ||
+        (track.kind === "audio" && mediaType === "audio");
+
+      if (hasSupportedType && kindMatch) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        setIsDragOver(true);
+      } else {
+        setIsDragOver(false);
+      }
+    },
+    [track.kind],
+  );
 
   const handleDragLeave = useCallback(() => {
     setIsDragOver(false);
@@ -42,15 +55,25 @@ export function TrackLane({ track }: TrackLaneProps) {
     (e: React.DragEvent) => {
       e.preventDefault();
       setIsDragOver(false);
+
       const mediaId = readDraggedMediaId(e.dataTransfer);
       if (!mediaId) return;
+
+      // Validate media type matches this track kind.
+      const mediaType = getDragMediaType();
+      if (mediaType) {
+        const kindMatch =
+          (track.kind === "video" && (mediaType === "video" || mediaType === "image")) ||
+          (track.kind === "audio" && mediaType === "audio");
+        if (!kindMatch) return;
+      }
 
       const rect = e.currentTarget.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const timelineStart = (x + scrollX) / zoom;
       addClip(track.id, mediaId, Math.max(0, timelineStart));
     },
-    [track.id, zoom, scrollX, addClip],
+    [track.id, track.kind, zoom, scrollX, addClip],
   );
 
   return (

@@ -1,5 +1,19 @@
+import type { MediaType } from "../types";
+
 export const MEDIA_DND_MIME = "application/x-framecut-media";
 export const MEDIA_DND_TEXT_PREFIX = "framecut-media:";
+
+// Module-level state so dragover handlers can know the media type
+// (dataTransfer.getData() is blocked during dragover for security).
+let _dragMediaType: MediaType | null = null;
+
+export function setDragMediaType(type: MediaType | null) {
+  _dragMediaType = type;
+}
+
+export function getDragMediaType(): MediaType | null {
+  return _dragMediaType;
+}
 
 function getTransferTypes(dataTransfer: DataTransfer): string[] {
   const types = dataTransfer.types as unknown as {
@@ -48,4 +62,45 @@ export function readDraggedMediaId(dataTransfer: DataTransfer): string | null {
   }
 
   return null;
+}
+
+function decodeFileUriPath(uri: string): string | null {
+  if (!uri.toLowerCase().startsWith("file://")) return null;
+  const raw = uri.slice("file://".length);
+  const withoutHost = raw.replace(/^localhost\//i, "");
+  const decoded = decodeURIComponent(withoutHost);
+  // Windows: /C:/Users/... -> C:/Users/...
+  return decoded.replace(/^\/([a-zA-Z]:\/)/, "$1");
+}
+
+export function readDroppedFilePaths(dataTransfer: DataTransfer): string[] {
+  const paths: string[] = [];
+  const seen = new Set<string>();
+
+  const files = Array.from(dataTransfer.files ?? []);
+  for (const file of files) {
+    const withPath = file as File & { path?: string };
+    const path = typeof withPath.path === "string" ? withPath.path.trim() : "";
+    if (path && !seen.has(path)) {
+      seen.add(path);
+      paths.push(path);
+    }
+  }
+
+  const uriList = dataTransfer.getData("text/uri-list");
+  if (uriList) {
+    const lines = uriList
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith("#"));
+    for (const line of lines) {
+      const decoded = decodeFileUriPath(line);
+      if (decoded && !seen.has(decoded)) {
+        seen.add(decoded);
+        paths.push(decoded);
+      }
+    }
+  }
+
+  return paths;
 }
