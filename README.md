@@ -4,7 +4,7 @@ FrameCut is a desktop video editor built with React + TypeScript (frontend) and 
 
 ## Current status
 
-This project is an MVP with core editing flow implemented and some areas still stubbed.
+This project is an MVP with core editing flow implemented and some areas still stubbed. **This is a beta, do not expect something easy-to-use with low amounts of bugs.**
 
 Implemented:
 - Import video, audio, and image media via file dialog
