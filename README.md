@@ -14,6 +14,7 @@ Implemented:
 - Undo/redo
 - Export timeline with progress and cancel support
 - Full project saving
+- Help section
 
 Not fully implemented yet:
 - Proxies and waveform generation (backend stubs)
