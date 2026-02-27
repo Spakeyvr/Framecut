@@ -27,51 +27,30 @@ Not fully implemented yet:
 - Tauri 2 + Rust workspace crates
 - FFmpeg/FFprobe for media processing
 
-## Prerequisites
+## Installation
 
-Install:
+1. Download the latest release from the [Releases](../../releases) page.
+2. Install FFmpeg (both `ffmpeg` and `ffprobe` must be on your `PATH`): https://ffmpeg.org/download.html
+3. Run FrameCut. On startup it checks for FFmpeg/FFprobe and shows an in-app warning if missing.
+
+## Building from source
+
+Prerequisites:
 - Node.js 18+
 - Rust (stable toolchain)
 - Tauri platform prerequisites: https://v2.tauri.app/start/prerequisites/
-- FFmpeg (must provide both `ffmpeg` and `ffprobe` on `PATH`): https://ffmpeg.org/download.html
-
-## Install
+- FFmpeg on `PATH` (see above)
 
 ```bash
 npm install
+npm run tauri:build
 ```
 
-## Run in development
+For development:
 
 ```bash
 npm run tauri:dev
 ```
-
-Notes:
-- Tauri is configured to run the frontend dev server at `http://localhost:1420`.
-- On startup, FrameCut checks for FFmpeg/FFprobe and shows an in-app warning if missing.
-
-## Build
-
-Frontend build only:
-
-```bash
-npm run build
-```
-
-Desktop app bundle:
-
-```bash
-npm run tauri:build
-```
-
-## Useful scripts
-
-- `npm run dev` - Vite dev server only
-- `npm run tauri:dev` - Full desktop app in dev mode
-- `npm run lint` - ESLint on `src/`
-- `npm run format` - Prettier write on `src/`
-- `npm run format:check` - Prettier check on `src/`
 
 ## Keyboard shortcuts
 
