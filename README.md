@@ -8,17 +8,16 @@ This project is an MVP with core editing flow implemented and some areas still s
 
 Implemented:
 - Import video, audio, and image media via file dialog
-- Generate media metadata and thumbnails with FFmpeg/FFprobe
 - Add clips to timeline (drag/drop or double-click)
 - Basic timeline editing (move, trim, split, delete)
 - Playback preview with playhead controls
-- Undo/redo (frontend state snapshots)
-- Export timeline to MP4 with progress and cancel support
+- Undo/redo
+- Export timeline with progress and cancel support
+- Full project saving
 
 Not fully implemented yet:
 - Proxies and waveform generation (backend stubs)
 - Effects/captions pipelines (backend stubs)
-- Full project save/load flow wired into UI shortcuts
 
 ## Tech stack
 
