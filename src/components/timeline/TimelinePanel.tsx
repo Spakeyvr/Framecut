@@ -93,10 +93,10 @@ export function TimelinePanel() {
           onWheel={handleWheel}
           onScroll={handleScroll}
           onClick={(e) => {
-            // Click on empty area deselects
-            if (e.target === e.currentTarget) {
-              setSelectedClipId(null);
-            }
+            const target = e.target as HTMLElement;
+            const clickedClip = target.closest(".clip");
+            const clickedMenu = target.closest(".context-menu");
+            if (!clickedClip && !clickedMenu) setSelectedClipId(null);
           }}
         >
           <div style={{ width: contentWidth, minWidth: "100%" }}>

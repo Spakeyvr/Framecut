@@ -5,12 +5,14 @@ import { PreviewPanel } from "./components/preview/PreviewPanel";
 import { InspectorPanel } from "./components/inspector/InspectorPanel";
 import { TimelinePanel } from "./components/timeline/TimelinePanel";
 import { ExportDialog } from "./components/export/ExportDialog";
+import { HelpDialog } from "./components/help/HelpDialog";
 import { useUIStore } from "./stores/ui-store";
 import { useKeyboardShortcuts } from "./hooks";
 import { checkFfmpeg } from "./api/commands";
 
 function App() {
   const showExportDialog = useUIStore((s) => s.showExportDialog);
+  const showHelpDialog = useUIStore((s) => s.showHelpDialog);
   const [ffmpegError, setFfmpegError] = useState<string | null>(null);
 
   useKeyboardShortcuts();
@@ -23,17 +25,7 @@ function App() {
   return (
     <div className="app">
       {ffmpegError && (
-        <div
-          style={{
-            background: "#442",
-            color: "#fa4",
-            padding: "8px 16px",
-            fontSize: 12,
-            textAlign: "center",
-          }}
-        >
-          {ffmpegError}
-        </div>
+        <div className="ffmpeg-warning">{ffmpegError}</div>
       )}
       <Toolbar />
       <div className="app-main">
@@ -43,6 +35,7 @@ function App() {
       </div>
       <TimelinePanel />
       {showExportDialog && <ExportDialog />}
+      {showHelpDialog && <HelpDialog />}
     </div>
   );
 }

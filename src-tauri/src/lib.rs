@@ -35,6 +35,8 @@ pub struct ClipRef {
     pub source_start: f64,
     pub source_end: f64,
     pub timeline_start: f64,
+    #[serde(default)]
+    pub has_audio: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -272,8 +274,9 @@ async fn start_export(
         if let Err(e) = result {
             let _ =
                 app.emit("export-error", serde_json::json!({ "jobId": job_id_clone, "error": e }));
+        } else {
+            let _ = app.emit("export-done", serde_json::json!({ "jobId": job_id_clone }));
         }
-        let _ = app.emit("export-done", serde_json::json!({ "jobId": job_id_clone }));
     });
 
     Ok(serde_json::json!({ "jobId": job_id }).to_string())

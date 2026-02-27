@@ -101,4 +101,5 @@ export interface ClipRef {
   sourceStart: number;
   sourceEnd: number;
   timelineStart: number;
+  hasAudio?: boolean;
 }

@@ -6,6 +6,7 @@ export function Toolbar() {
   const undo = useProjectStore((s) => s.undo);
   const redo = useProjectStore((s) => s.redo);
   const setShowExportDialog = useUIStore((s) => s.setShowExportDialog);
+  const setShowHelpDialog = useUIStore((s) => s.setShowHelpDialog);
 
   return (
     <div className="toolbar">
@@ -15,6 +16,13 @@ export function Toolbar() {
       </button>
       <button className="toolbar-btn" onClick={redo} title="Redo (Ctrl+Shift+Z)">
         Redo
+      </button>
+      <button
+        className="toolbar-btn"
+        onClick={() => setShowHelpDialog(true)}
+        title="Help (F1 or ?)"
+      >
+        Help
       </button>
       <button
         className="toolbar-btn toolbar-btn--accent"

@@ -127,6 +127,7 @@ export const startExport = async (payload: ExportRequestPayload): Promise<string
       source_start: c.sourceStart,
       source_end: c.sourceEnd,
       timeline_start: c.timelineStart,
+      has_audio: c.hasAudio ?? false,
     })),
     output_path: payload.outputPath,
     width: payload.width,

@@ -187,14 +187,38 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 
   toggleTrackMute: (id) =>
-    set((s) => ({
-      tracks: s.tracks.map((t) => (t.id === id ? { ...t, muted: !t.muted } : t)),
-    })),
+    set((s) => {
+      const snapshot: Snapshot = {
+        media: structuredClone(s.media),
+        tracks: structuredClone(s.tracks),
+      };
+      const undoStack =
+        s.undoStack.length >= MAX_UNDO
+          ? [...s.undoStack.slice(1), snapshot]
+          : [...s.undoStack, snapshot];
+      return {
+        tracks: s.tracks.map((t) => (t.id === id ? { ...t, muted: !t.muted } : t)),
+        undoStack,
+        redoStack: [],
+      };
+    }),
 
   toggleTrackVisibility: (id) =>
-    set((s) => ({
-      tracks: s.tracks.map((t) => (t.id === id ? { ...t, visible: !t.visible } : t)),
-    })),
+    set((s) => {
+      const snapshot: Snapshot = {
+        media: structuredClone(s.media),
+        tracks: structuredClone(s.tracks),
+      };
+      const undoStack =
+        s.undoStack.length >= MAX_UNDO
+          ? [...s.undoStack.slice(1), snapshot]
+          : [...s.undoStack, snapshot];
+      return {
+        tracks: s.tracks.map((t) => (t.id === id ? { ...t, visible: !t.visible } : t)),
+        undoStack,
+        redoStack: [],
+      };
+    }),
 
   // ── Clips ─────────────────────────────────────────────────────────────────
 
@@ -250,7 +274,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     if (!destTrack) return false;
     if (wouldOverlap(movedClip, destTrack, clipId)) return false;
 
-    get().pushSnapshot();
     set((s) => ({
       tracks: s.tracks.map((t) => {
         if (t.id === sourceTrackId && t.id === newTrackId) {
@@ -295,7 +318,6 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     const leftDelta = clampedStart - clip.sourceStart;
     const newTimelineStart = clip.timelineStart + leftDelta;
 
-    get().pushSnapshot();
     set((s) => ({
       tracks: s.tracks.map((t) => ({
         ...t,

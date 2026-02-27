@@ -1,31 +1,31 @@
 /* ── Variables ──────────────────────────────────────────────────────────────── */
 
 :root {
-  --bg-base: #1a1a1a;
-  --bg-panel: #242424;
-  --bg-panel-alt: #2a2a2a;
-  --bg-surface: #303030;
-  --bg-hover: #383838;
-  --bg-active: #444;
-  --border: #333;
-  --border-light: #444;
-  --text-primary: #e0e0e0;
-  --text-secondary: #999;
-  --text-muted: #666;
-  --accent: #5b5fc7;
-  --accent-hover: #6e72d4;
-  --accent-dim: #3d4099;
-  --danger: #d44;
-  --playhead: #f44;
-  --clip-video: #4a7dbd;
-  --clip-audio: #4daa57;
-  --clip-selected: #6b9fd4;
+  --bg-base: #151618;
+  --bg-panel: #1d1f22;
+  --bg-panel-alt: #24272b;
+  --bg-surface: #2c3035;
+  --bg-hover: #32363c;
+  --bg-active: #3a3f46;
+  --border: #32353a;
+  --border-light: #454a52;
+  --text-primary: #eceef1;
+  --text-secondary: #adb3bc;
+  --text-muted: #7f8792;
+  --accent: #3e78c2;
+  --accent-hover: #4f88d1;
+  --accent-dim: #305f9b;
+  --danger: #d65f5f;
+  --playhead: #ef5f5f;
+  --clip-video: #4e7eae;
+  --clip-audio: #4f8f69;
+  --clip-selected: #88aed2;
 
   --toolbar-height: 44px;
   --timeline-height: 35vh;
 
   font-family:
-    Inter,
+    "IBM Plex Sans",
     system-ui,
     -apple-system,
     BlinkMacSystemFont,
@@ -56,6 +56,13 @@ button {
   background: none;
   border: none;
   cursor: pointer;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 input,
@@ -106,6 +113,14 @@ select {
   border-bottom: 1px solid var(--border);
 }
 
+.ffmpeg-warning {
+  background: #3d3421;
+  color: #f3bf66;
+  padding: 8px 16px;
+  font-size: 12px;
+  text-align: center;
+}
+
 /* ── Toolbar ───────────────────────────────────────────────────────────────── */
 
 .toolbar {
@@ -113,7 +128,7 @@ select {
   align-items: center;
   gap: 8px;
   height: var(--toolbar-height);
-  padding: 0 12px;
+  padding: 0 14px;
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
 }
@@ -128,15 +143,20 @@ select {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 12px;
-  border-radius: 4px;
+  padding: 7px 12px;
+  border-radius: 6px;
   font-size: 12px;
   color: var(--text-secondary);
-  transition: background 0.1s;
+  border: 1px solid transparent;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
 }
 
 .toolbar-btn:hover {
   background: var(--bg-hover);
+  border-color: var(--border-light);
   color: var(--text-primary);
 }
 
@@ -163,7 +183,7 @@ select {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 10px 12px;
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
@@ -175,7 +195,7 @@ select {
 .panel-body {
   flex: 1;
   overflow: auto;
-  padding: 8px;
+  padding: 10px;
 }
 
 /* ── Media Pool ────────────────────────────────────────────────────────────── */
@@ -187,15 +207,15 @@ select {
 .media-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-  gap: 6px;
+  gap: 8px;
 }
 
 .media-item {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 6px;
-  border-radius: 4px;
+  padding: 8px;
+  border-radius: 6px;
   cursor: grab;
   transition: background 0.1s;
 }
@@ -208,7 +228,7 @@ select {
   width: 100%;
   aspect-ratio: 16 / 9;
   background: var(--bg-surface);
-  border-radius: 3px;
+  border-radius: 5px;
   object-fit: cover;
 }
 
@@ -264,14 +284,14 @@ select {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  padding: 8px;
+  padding: 10px;
   background: var(--bg-panel);
   border-top: 1px solid var(--border);
 }
 
 .transport-btn {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -285,8 +305,8 @@ select {
 }
 
 .transport-btn--play {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   background: var(--accent);
   color: white;
 }
@@ -348,7 +368,7 @@ select {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 8px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--border);
   font-size: 11px;
 }
@@ -429,7 +449,7 @@ select {
 }
 
 .track-lane--drop-target {
-  background: rgba(91, 95, 199, 0.08);
+  background: rgba(62, 120, 194, 0.12);
 }
 
 /* ── Clips on timeline ─────────────────────────────────────────────────────── */
@@ -520,28 +540,42 @@ select {
 
 /* ── Export Dialog ─────────────────────────────────────────────────────────── */
 
-.export-overlay {
+.modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.64);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 100;
+  z-index: 300;
+}
+
+.modal-dialog {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px;
+  width: 420px;
+  max-width: 90vw;
+  box-shadow: 0 16px 30px rgba(0, 0, 0, 0.35);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 14px;
 }
 
 .export-dialog {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 24px;
-  width: 400px;
-  max-width: 90vw;
+  width: 420px;
 }
 
-.export-dialog h2 {
+.export-dialog h2,
+.help-dialog h2 {
   font-size: 16px;
-  margin-bottom: 16px;
+  margin: 0;
 }
 
 .export-field {
@@ -564,7 +598,13 @@ select {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
-  margin-top: 20px;
+  margin-top: 18px;
+}
+
+.dialog-error {
+  color: var(--danger);
+  font-size: 12px;
+  margin-top: 8px;
 }
 
 .export-progress {
@@ -592,6 +632,55 @@ select {
   accent-color: var(--accent);
 }
 
+.help-dialog {
+  width: 560px;
+}
+
+.help-section {
+  margin-top: 12px;
+}
+
+.help-section h3 {
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.help-section ol {
+  padding-left: 18px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.help-shortcuts {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.help-shortcut-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.help-shortcut-row:last-child {
+  border-bottom: none;
+}
+
+.help-shortcut-keys {
+  color: var(--text-primary);
+  font-family: "IBM Plex Mono", Consolas, "Courier New", monospace;
+  font-size: 12px;
+}
+
+.help-shortcut-desc {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
 /* ── Context menu ──────────────────────────────────────────────────────────── */
 
 .context-menu {
@@ -601,7 +690,7 @@ select {
   border-radius: 6px;
   padding: 4px;
   min-width: 160px;
-  z-index: 200;
+  z-index: 400;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 

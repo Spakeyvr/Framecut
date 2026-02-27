@@ -14,6 +14,7 @@ interface UIState {
 
   // Export dialog
   showExportDialog: boolean;
+  showHelpDialog: boolean;
 
   // Actions
   setPlayheadTime: (time: number) => void;
@@ -22,6 +23,7 @@ interface UIState {
   setTimelineZoom: (zoom: number) => void;
   setTimelineScrollX: (x: number) => void;
   setShowExportDialog: (show: boolean) => void;
+  setShowHelpDialog: (show: boolean) => void;
 }
 
 const MIN_ZOOM = 10; // px/s (very zoomed out)
@@ -34,6 +36,7 @@ export const useUIStore = create<UIState>()((set) => ({
   timelineZoom: 80,
   timelineScrollX: 0,
   showExportDialog: false,
+  showHelpDialog: false,
 
   setPlayheadTime: (time) => set({ playheadTime: Math.max(0, time) }),
   setIsPlaying: (playing) => set({ isPlaying: playing }),
@@ -42,4 +45,5 @@ export const useUIStore = create<UIState>()((set) => ({
     set({ timelineZoom: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom)) }),
   setTimelineScrollX: (x) => set({ timelineScrollX: Math.max(0, x) }),
   setShowExportDialog: (show) => set({ showExportDialog: show }),
+  setShowHelpDialog: (show) => set({ showHelpDialog: show }),
 }));

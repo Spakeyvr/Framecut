@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useUIStore } from "../../stores/ui-store";
@@ -18,20 +18,30 @@ export function ExportDialog() {
   const [progress, setProgress] = useState(0);
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const currentJobIdRef = useRef<string | null>(null);
 
   const preset =
     EXPORT_PRESETS.find((p) => p.id === selectedPresetId) ?? EXPORT_PRESETS[0];
 
-  // Listen for export progress events
+  useEffect(() => {
+    currentJobIdRef.current = jobId;
+  }, [jobId]);
+
   useEffect(() => {
     const unlisten1 = listen<{ jobId: string; progress: number }>(
       "export-progress",
       (event) => {
+        if (!currentJobIdRef.current || event.payload.jobId !== currentJobIdRef.current) {
+          return;
+        }
         setProgress(event.payload.progress);
       },
     );
 
-    const unlisten2 = listen<{ jobId: string }>("export-done", () => {
+    const unlisten2 = listen<{ jobId: string }>("export-done", (event) => {
+      if (!currentJobIdRef.current || event.payload.jobId !== currentJobIdRef.current) {
+        return;
+      }
       setExporting(false);
       setProgress(1);
     });
@@ -39,6 +49,9 @@ export function ExportDialog() {
     const unlisten3 = listen<{ jobId: string; error: string }>(
       "export-error",
       (event) => {
+        if (!currentJobIdRef.current || event.payload.jobId !== currentJobIdRef.current) {
+          return;
+        }
         setError(event.payload.error);
         setExporting(false);
       },
@@ -51,10 +64,21 @@ export function ExportDialog() {
     };
   }, []);
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Escape" && !exporting) {
+        e.preventDefault();
+        setShowExportDialog(false);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [exporting, setShowExportDialog]);
+
   const handleExport = async () => {
     setError(null);
 
-    // Build clip refs from timeline
     const clipRefs: ClipRef[] = [];
     for (const track of tracks) {
       for (const clip of track.clips) {
@@ -65,6 +89,7 @@ export function ExportDialog() {
             sourceStart: clip.sourceStart,
             sourceEnd: clip.sourceEnd,
             timelineStart: clip.timelineStart,
+            hasAudio: m.hasAudio,
           });
         }
       }
@@ -75,7 +100,6 @@ export function ExportDialog() {
       return;
     }
 
-    // Ask for output path
     const outputPath = await save({
       filters: [{ name: "MP4 Video", extensions: ["mp4"] }],
       defaultPath: "output.mp4",
@@ -84,6 +108,8 @@ export function ExportDialog() {
 
     setExporting(true);
     setProgress(0);
+    setJobId(null);
+    currentJobIdRef.current = null;
 
     try {
       const id = await startExport({
@@ -97,6 +123,7 @@ export function ExportDialog() {
         audioBitrate: preset.audioBitrate,
       });
       setJobId(id);
+      currentJobIdRef.current = id;
     } catch (err) {
       setError(String(err));
       setExporting(false);
@@ -112,15 +139,17 @@ export function ExportDialog() {
 
   return (
     <div
-      className="export-overlay"
+      className="modal-overlay"
       onClick={(e) => {
         if (e.target === e.currentTarget && !exporting) {
           setShowExportDialog(false);
         }
       }}
     >
-      <div className="export-dialog">
-        <h2>Export Video</h2>
+      <div className="modal-dialog export-dialog" role="dialog" aria-modal="true">
+        <div className="modal-header">
+          <h2>Export Video</h2>
+        </div>
 
         <div className="export-field">
           <label>Preset</label>
@@ -137,24 +166,15 @@ export function ExportDialog() {
           </select>
         </div>
 
-        {error && (
-          <div style={{ color: "var(--danger)", fontSize: 12, marginTop: 8 }}>
-            {error}
-          </div>
-        )}
+        {error && <div className="dialog-error">{error}</div>}
 
         {exporting && (
           <div className="export-progress">
             <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-              {progress >= 1
-                ? "Export complete!"
-                : `Exporting... ${Math.round(progress * 100)}%`}
+              {progress >= 1 ? "Export complete!" : `Exporting... ${Math.round(progress * 100)}%`}
             </span>
             <div className="progress-bar">
-              <div
-                className="progress-bar-fill"
-                style={{ width: `${progress * 100}%` }}
-              />
+              <div className="progress-bar-fill" style={{ width: `${progress * 100}%` }} />
             </div>
           </div>
         )}
