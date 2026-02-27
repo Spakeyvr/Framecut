@@ -1,6 +1,7 @@
 [workspace]
 members = [
     ".",
+    "crates/fc-ffmpeg",
     "crates/fc-project",
     "crates/fc-media",
     "crates/fc-timeline",
@@ -34,7 +35,7 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }

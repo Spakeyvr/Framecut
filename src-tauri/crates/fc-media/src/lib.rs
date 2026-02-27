@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::process::Command;
 
 /// Metadata returned by probing a media file with FFprobe.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -15,10 +14,10 @@ pub struct MediaInfo {
 
 /// Check whether FFmpeg/FFprobe are available on PATH.
 pub fn check_ffmpeg() -> Result<(), String> {
-    Command::new("ffprobe").arg("-version").output().map_err(|_| {
+    fc_ffmpeg::ffprobe_command().arg("-version").output().map_err(|_| {
         "FFprobe not found on PATH. Please install FFmpeg: https://ffmpeg.org".to_string()
     })?;
-    Command::new("ffmpeg").arg("-version").output().map_err(|_| {
+    fc_ffmpeg::ffmpeg_command().arg("-version").output().map_err(|_| {
         "FFmpeg not found on PATH. Please install FFmpeg: https://ffmpeg.org".to_string()
     })?;
     Ok(())
@@ -26,7 +25,7 @@ pub fn check_ffmpeg() -> Result<(), String> {
 
 /// Probe a media file and return its metadata.
 pub fn probe(path: &str) -> Result<MediaInfo, String> {
-    let output = Command::new("ffprobe")
+    let output = fc_ffmpeg::ffprobe_command()
         .args(["-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", path])
         .output()
         .map_err(|e| format!("Failed to run ffprobe: {e}"))?;
@@ -100,7 +99,7 @@ pub fn probe(path: &str) -> Result<MediaInfo, String> {
 
 /// Generate a single thumbnail image from a media file.
 pub fn generate_thumbnail(path: &str, time: f64, out_path: &str, width: u32) -> Result<(), String> {
-    let status = Command::new("ffmpeg")
+    let status = fc_ffmpeg::ffmpeg_command()
         .args([
             "-y",
             "-ss",
@@ -137,7 +136,7 @@ pub fn generate_thumbnail_strip(
     let scale_filter = format!("scale={thumb_width}:-1");
     let tile_filter = format!("tile={n_frames}x1");
 
-    let status = Command::new("ffmpeg")
+    let status = fc_ffmpeg::ffmpeg_command()
         .args([
             "-y",
             "-i",

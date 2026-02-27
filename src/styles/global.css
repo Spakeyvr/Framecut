@@ -323,6 +323,13 @@ select {
   text-align: center;
 }
 
+.preview-debug {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* ── Inspector ─────────────────────────────────────────────────────────────── */
 
 .inspector-panel {

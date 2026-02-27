@@ -105,7 +105,19 @@ export const seekPreview = (
   time: number,
   width: number,
   height: number,
-) => invoke<number[]>("seek_preview", { clipsJson, time, width, height });
+  tier: number,
+): Promise<Uint8Array> =>
+  invoke<Uint8Array | ArrayBuffer | number[]>("seek_preview", {
+    clipsJson,
+    time,
+    width,
+    height,
+    tier,
+  }).then((payload) => {
+    if (payload instanceof Uint8Array) return payload;
+    if (payload instanceof ArrayBuffer) return new Uint8Array(payload);
+    return Uint8Array.from(payload);
+  });
 
 // ── Export ────────────────────────────────────────────────────────────────────
 

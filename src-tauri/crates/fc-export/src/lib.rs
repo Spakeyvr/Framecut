@@ -147,7 +147,7 @@ pub async fn run_export(
     // Calculate total duration for progress tracking
     let total_duration: f64 = clips.iter().map(|c| c.source_end - c.source_start).sum();
 
-    let mut child = tokio::process::Command::new("ffmpeg")
+    let mut child = fc_ffmpeg::tokio_ffmpeg_command()
         .args(&args)
         .stderr(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null())

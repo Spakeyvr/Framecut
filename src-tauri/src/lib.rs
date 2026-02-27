@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::{command, AppHandle, Emitter, Manager, State};
+#[cfg(debug_assertions)]
+use std::time::Instant;
+use tauri::{command, ipc::Response, AppHandle, Emitter, Manager, State};
 
 // ── App state ─────────────────────────────────────────────────────────────────
 
@@ -10,6 +12,43 @@ use tauri::{command, AppHandle, Emitter, Manager, State};
 pub struct AppState {
     pub data_dir: PathBuf,
     pub export_jobs: Mutex<HashMap<String, tokio::sync::watch::Sender<bool>>>,
+    #[cfg(debug_assertions)]
+    preview_stats: Mutex<PreviewStatsWindow>,
+}
+
+#[cfg(debug_assertions)]
+struct PreviewStatsWindow {
+    window_started_at: Instant,
+    frames: u32,
+    spawn_sum_ms: f64,
+    decode_sum_ms: f64,
+    total_sum_ms: f64,
+    tier: u8,
+}
+
+#[cfg(debug_assertions)]
+impl Default for PreviewStatsWindow {
+    fn default() -> Self {
+        Self {
+            window_started_at: Instant::now(),
+            frames: 0,
+            spawn_sum_ms: 0.0,
+            decode_sum_ms: 0.0,
+            total_sum_ms: 0.0,
+            tier: 0,
+        }
+    }
+}
+
+#[cfg(debug_assertions)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PreviewStatsPayload {
+    fps_delivered: f64,
+    spawn_ms_avg: f64,
+    decode_ms_avg: f64,
+    total_ms_avg: f64,
+    tier: u8,
 }
 
 // ── Shared types for IPC ──────────────────────────────────────────────────────
@@ -298,11 +337,56 @@ async fn seek_preview(
     time: f64,
     width: u32,
     height: u32,
-) -> Result<Vec<u8>, String> {
+    _tier: u8,
+    _app: AppHandle,
+    _state: State<'_, AppState>,
+) -> Result<Response, String> {
     let clips: Vec<fc_preview::ClipRef> =
         serde_json::from_str(&clips_json).map_err(|e| format!("Invalid clips JSON: {e}"))?;
 
-    fc_preview::decode_frame_for_timeline(&clips, time, width, height)
+    let decoded = fc_preview::decode_frame_for_timeline_with_metrics(&clips, time, width, height)?;
+
+    #[cfg(debug_assertions)]
+    emit_preview_stats(&_app, &_state, decoded.metrics, _tier);
+
+    Ok(Response::new(decoded.frame))
+}
+
+#[cfg(debug_assertions)]
+fn emit_preview_stats(
+    app: &AppHandle,
+    state: &State<'_, AppState>,
+    metrics: fc_preview::DecodeMetrics,
+    tier: u8,
+) {
+    let mut stats = match state.preview_stats.lock() {
+        Ok(guard) => guard,
+        Err(_) => return,
+    };
+
+    stats.frames += 1;
+    stats.spawn_sum_ms += metrics.spawn_ms;
+    stats.decode_sum_ms += metrics.decode_ms();
+    stats.total_sum_ms += metrics.total_ms;
+    stats.tier = tier;
+
+    let elapsed = stats.window_started_at.elapsed().as_secs_f64();
+    if elapsed < 1.0 {
+        return;
+    }
+
+    let frames = f64::from(stats.frames.max(1));
+    let payload = PreviewStatsPayload {
+        fps_delivered: frames / elapsed,
+        spawn_ms_avg: stats.spawn_sum_ms / frames,
+        decode_ms_avg: stats.decode_sum_ms / frames,
+        total_ms_avg: stats.total_sum_ms / frames,
+        tier: stats.tier,
+    };
+    let _ = app.emit("preview-stats", payload);
+
+    *stats = PreviewStatsWindow::default();
+    stats.tier = tier;
 }
 
 #[command]
@@ -322,7 +406,12 @@ pub fn run() {
             let data_dir = app.path().app_data_dir().unwrap_or_else(|_| PathBuf::from(".framecut"));
             std::fs::create_dir_all(&data_dir).ok();
 
-            app.manage(AppState { data_dir, export_jobs: Mutex::new(HashMap::new()) });
+            app.manage(AppState {
+                data_dir,
+                export_jobs: Mutex::new(HashMap::new()),
+                #[cfg(debug_assertions)]
+                preview_stats: Mutex::new(PreviewStatsWindow::default()),
+            });
 
             Ok(())
         })
