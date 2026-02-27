@@ -65,10 +65,7 @@ export function useKeyboardShortcuts() {
       }
 
       // Delete/Backspace: delete selected clip
-      if (
-        e.code === SHORTCUT_BINDINGS.DELETE ||
-        e.code === SHORTCUT_BINDINGS.BACKSPACE
-      ) {
+      if (e.code === SHORTCUT_BINDINGS.DELETE || e.code === SHORTCUT_BINDINGS.BACKSPACE) {
         e.preventDefault();
         if (ui.selectedClipId) {
           project.deleteClip(ui.selectedClipId);
@@ -108,11 +105,7 @@ export function useKeyboardShortcuts() {
       }
 
       // Ctrl/Cmd+S: save project (placeholder)
-      if (
-        (e.ctrlKey || e.metaKey) &&
-        e.code === SHORTCUT_BINDINGS.SAVE &&
-        !e.shiftKey
-      ) {
+      if ((e.ctrlKey || e.metaKey) && e.code === SHORTCUT_BINDINGS.SAVE && !e.shiftKey) {
         e.preventDefault();
         return;
       }

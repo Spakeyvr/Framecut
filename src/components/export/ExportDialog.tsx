@@ -171,10 +171,15 @@ export function ExportDialog() {
         {exporting && (
           <div className="export-progress">
             <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-              {progress >= 1 ? "Export complete!" : `Exporting... ${Math.round(progress * 100)}%`}
+              {progress >= 1
+                ? "Export complete!"
+                : `Exporting... ${Math.round(progress * 100)}%`}
             </span>
             <div className="progress-bar">
-              <div className="progress-bar-fill" style={{ width: `${progress * 100}%` }} />
+              <div
+                className="progress-bar-fill"
+                style={{ width: `${progress * 100}%` }}
+              />
             </div>
           </div>
         )}

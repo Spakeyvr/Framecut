@@ -24,9 +24,7 @@ function App() {
 
   return (
     <div className="app">
-      {ffmpegError && (
-        <div className="ffmpeg-warning">{ffmpegError}</div>
-      )}
+      {ffmpegError && <div className="ffmpeg-warning">{ffmpegError}</div>}
       <Toolbar />
       <div className="app-main">
         <MediaPool />
