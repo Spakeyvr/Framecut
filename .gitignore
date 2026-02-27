@@ -28,4 +28,7 @@ Thumbs.db
 *.log
 npm-debug.log*
 
+# Personal files
+.launch-framecut.bat
+
 # Lock files are committed (package-lock.json, Cargo.lock)
