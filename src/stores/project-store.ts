@@ -1,7 +1,14 @@
 import { create } from "zustand";
 import { nanoid } from "nanoid";
-import type { MediaItem, Clip, Track, TrackKind, Project } from "../types";
-import { clipEnd } from "../types";
+import type {
+  MediaItem,
+  Clip,
+  Track,
+  TrackKind,
+  Project,
+  TextProperties,
+} from "../types";
+import { clipEnd, isTextClip, DEFAULT_TEXT_PROPERTIES } from "../types";
 
 const DEFAULT_IMAGE_CLIP_DURATION = 5;
 const STILL_IMAGE_EXTENSIONS = new Set([
@@ -64,6 +71,11 @@ interface ProjectState {
 
   // Actions — clips
   addClip: (trackId: string, mediaId: string, timelineStart: number) => string | null;
+  addTextClip: (
+    trackId: string,
+    timelineStart: number,
+    textProps?: Partial<TextProperties>,
+  ) => string | null;
   moveClip: (clipId: string, newTrackId: string, newTimelineStart: number) => boolean;
   trimClip: (
     clipId: string,
@@ -72,6 +84,7 @@ interface ProjectState {
   ) => void;
   splitClip: (clipId: string, atTimelineTime: number) => void;
   deleteClip: (clipId: string) => void;
+  updateTextProperties: (clipId: string, updates: Partial<TextProperties>) => void;
 
   // Actions — undo/redo
   undo: () => void;
@@ -136,8 +149,15 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   // ── File management ──────────────────────────────────────────────────────
 
   getProjectData: () => {
-    const { projectId, projectName, media, tracks, projectFps, projectWidth, projectHeight } =
-      get();
+    const {
+      projectId,
+      projectName,
+      media,
+      tracks,
+      projectFps,
+      projectWidth,
+      projectHeight,
+    } = get();
     return {
       id: projectId,
       name: projectName,
@@ -246,10 +266,21 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   addTrack: (kind) => {
     const id = nanoid();
     get().pushSnapshot();
-    set((s) => ({
-      tracks: [...s.tracks, { id, kind, clips: [], muted: false, visible: true }],
-      isDirty: true,
-    }));
+    set((s) => {
+      const newTrack = { id, kind, clips: [], muted: false, visible: true };
+      const newTracks = [...s.tracks];
+      if (kind === "video") {
+        // Insert after the last video track (before audio tracks)
+        const lastVideoIdx = newTracks.findLastIndex(
+          (t) => t.kind === "video",
+        );
+        newTracks.splice(lastVideoIdx + 1, 0, newTrack);
+      } else {
+        // Audio tracks go at the end
+        newTracks.push(newTrack);
+      }
+      return { tracks: newTracks, isDirty: true };
+    });
     return id;
   },
 
@@ -328,6 +359,36 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     return clipId;
   },
 
+  addTextClip: (trackId, timelineStart, textProps) => {
+    const { tracks } = get();
+    const track = tracks.find((t) => t.id === trackId);
+    if (!track || track.kind !== "video") return null;
+
+    const clipId = nanoid();
+    const duration = 5;
+
+    const newClip: Clip = {
+      id: clipId,
+      mediaId: "",
+      trackId,
+      timelineStart: Math.max(0, timelineStart),
+      sourceStart: 0,
+      sourceEnd: duration,
+      textProperties: { ...DEFAULT_TEXT_PROPERTIES, ...textProps },
+    };
+
+    if (wouldOverlap(newClip, track)) return null;
+
+    get().pushSnapshot();
+    set((s) => ({
+      tracks: s.tracks.map((t) =>
+        t.id === trackId ? { ...t, clips: sortClips([...t.clips, newClip]) } : t,
+      ),
+      isDirty: true,
+    }));
+    return clipId;
+  },
+
   moveClip: (clipId, newTrackId, newTimelineStart) => {
     const { tracks } = get();
     let sourceClip: Clip | undefined;
@@ -383,6 +444,53 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       if (clip) break;
     }
     if (!clip) return;
+
+    // Text clips behave like still images (no intrinsic source timeline)
+    if (isTextClip(clip)) {
+      const currentDuration = Math.max(0.1, clip.sourceEnd - clip.sourceStart);
+
+      if (newSourceStart !== null) {
+        const requestedDelta = newSourceStart - clip.sourceStart;
+        const maxShrinkDelta = currentDuration - 0.1;
+        const boundedDelta = Math.min(requestedDelta, maxShrinkDelta);
+        const proposedTimelineStart = clip.timelineStart + boundedDelta;
+        const clampedTimelineStart = Math.max(0, proposedTimelineStart);
+        const actualDelta = clampedTimelineStart - clip.timelineStart;
+        const nextDuration = Math.max(0.1, currentDuration - actualDelta);
+
+        set((s) => ({
+          tracks: s.tracks.map((t) => ({
+            ...t,
+            clips: t.clips.map((c) =>
+              c.id === clipId
+                ? {
+                    ...c,
+                    sourceStart: 0,
+                    sourceEnd: nextDuration,
+                    timelineStart: clampedTimelineStart,
+                  }
+                : c,
+            ),
+          })),
+          isDirty: true,
+        }));
+        return;
+      }
+
+      if (newSourceEnd !== null) {
+        const nextDuration = Math.max(0.1, newSourceEnd - clip.sourceStart);
+        set((s) => ({
+          tracks: s.tracks.map((t) => ({
+            ...t,
+            clips: t.clips.map((c) =>
+              c.id === clipId ? { ...c, sourceStart: 0, sourceEnd: nextDuration } : c,
+            ),
+          })),
+          isDirty: true,
+        }));
+      }
+      return;
+    }
 
     const mediaItem = media.find((m) => m.id === clip!.mediaId);
     if (!mediaItem) return;
@@ -491,9 +599,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     };
 
     const rightClip: Clip = {
+      ...clip,
       id: nanoid(),
-      mediaId: clip.mediaId,
-      trackId: clip.trackId,
       timelineStart: atTimelineTime,
       sourceStart: clip.sourceStart + splitOffset,
       sourceEnd: clip.sourceEnd,
@@ -523,6 +630,30 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       tracks: s.tracks.map((t) => ({
         ...t,
         clips: t.clips.filter((c) => c.id !== clipId),
+      })),
+      isDirty: true,
+    }));
+  },
+
+  updateTextProperties: (clipId, updates) => {
+    const { tracks } = get();
+    let found = false;
+    for (const t of tracks) {
+      if (t.clips.some((c) => c.id === clipId && c.textProperties)) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) return;
+
+    set((s) => ({
+      tracks: s.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.map((c) =>
+          c.id === clipId && c.textProperties
+            ? { ...c, textProperties: { ...c.textProperties, ...updates } }
+            : c,
+        ),
       })),
       isDirty: true,
     }));

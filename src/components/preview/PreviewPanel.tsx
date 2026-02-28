@@ -4,6 +4,8 @@ import { useRef, useEffect, useCallback, useMemo, useState } from "react";
 import { useUIStore } from "../../stores/ui-store";
 import { useProjectStore } from "../../stores/project-store";
 import { seekPreview } from "../../api/commands";
+import { isTextClip } from "../../types";
+import type { Clip, TextProperties } from "../../types";
 
 const PREVIEW_FPS = 30;
 const FRAME_BUDGET_MS = 1000 / PREVIEW_FPS;
@@ -55,7 +57,11 @@ function formatTimecode(seconds: number): string {
   return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}:${f.toString().padStart(2, "0")}`;
 }
 
-function waitForEvent(target: EventTarget, eventName: string, timeoutMs = 2000): Promise<void> {
+function waitForEvent(
+  target: EventTarget,
+  eventName: string,
+  timeoutMs = 2000,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     let finished = false;
     const done = (cb: () => void) => {
@@ -67,7 +73,10 @@ function waitForEvent(target: EventTarget, eventName: string, timeoutMs = 2000):
     };
 
     const onEvent = () => done(resolve);
-    const timer = window.setTimeout(() => done(() => reject(new Error(`${eventName} timeout`))), timeoutMs);
+    const timer = window.setTimeout(
+      () => done(() => reject(new Error(`${eventName} timeout`))),
+      timeoutMs,
+    );
 
     target.addEventListener(eventName, onEvent, { once: true });
   });
@@ -77,7 +86,10 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function getSourceDimensions(source: CanvasImageSource): { width: number; height: number } {
+function getSourceDimensions(source: CanvasImageSource): {
+  width: number;
+  height: number;
+} {
   if (source instanceof HTMLVideoElement) {
     return { width: source.videoWidth, height: source.videoHeight };
   }
@@ -105,6 +117,8 @@ function isJpegBytes(data: Uint8Array): boolean {
 
 export function PreviewPanel() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasSizeRef = useRef({ width: 640, height: 360 });
   const playheadTime = useUIStore((s) => s.playheadTime);
   const isPlaying = useUIStore((s) => s.isPlaying);
   const setIsPlaying = useUIStore((s) => s.setIsPlaying);
@@ -154,6 +168,7 @@ export function PreviewPanel() {
     for (const track of tracks) {
       if (track.kind === "video" && !track.visible) continue;
       for (const clip of track.clips) {
+        if (isTextClip(clip)) continue;
         const mediaItem = mediaById.get(clip.mediaId);
         if (!mediaItem) continue;
 
@@ -334,6 +349,49 @@ export function PreviewPanel() {
     [clearCanvas, drawCanvasSource, drawRawFrame],
   );
 
+  const drawTextOverlays = useCallback((time: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const { tracks: currentTracks } = useProjectStore.getState();
+    const textClips: { clip: Clip; tp: TextProperties }[] = [];
+    for (const track of currentTracks) {
+      if (track.kind !== "video" || !track.visible) continue;
+      for (const clip of track.clips) {
+        if (!isTextClip(clip)) continue;
+        const dur = clip.sourceEnd - clip.sourceStart;
+        const end = clip.timelineStart + dur;
+        if (time >= clip.timelineStart && time < end) {
+          textClips.push({ clip, tp: clip.textProperties! });
+        }
+      }
+    }
+
+    for (const { tp } of textClips) {
+      const scaledFontSize = (tp.fontSize / 1080) * canvas.height;
+      ctx.font = `${scaledFontSize}px "${tp.fontFamily}"`;
+      ctx.fillStyle = tp.color;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      const drawX = tp.x * canvas.width;
+      const drawY = tp.y * canvas.height;
+
+      ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
+      ctx.shadowBlur = Math.max(2, scaledFontSize * 0.08);
+      ctx.shadowOffsetX = 1;
+      ctx.shadowOffsetY = 1;
+      ctx.fillText(tp.content, drawX, drawY);
+
+      ctx.shadowColor = "transparent";
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
+    }
+  }, []);
+
   const loadImage = useCallback(async (path: string) => {
     const cache = imageCacheRef.current;
     const existing = cache.get(path);
@@ -370,7 +428,9 @@ export function PreviewPanel() {
       }
 
       const hasDuration = Number.isFinite(video.duration) && video.duration > 0;
-      const targetTime = hasDuration ? clamp(sourceTime, 0, Math.max(video.duration - 0.001, 0)) : Math.max(sourceTime, 0);
+      const targetTime = hasDuration
+        ? clamp(sourceTime, 0, Math.max(video.duration - 0.001, 0))
+        : Math.max(sourceTime, 0);
 
       const clipChanged = nativeClipKeyRef.current !== clip.key;
       const drift = Math.abs(video.currentTime - targetTime);
@@ -447,56 +507,53 @@ export function PreviewPanel() {
     [clearCanvas, drawCanvasSource, findActiveClip, loadImage, syncVideoToClip],
   );
 
-  const syncAudioPlayback = useCallback(
-    (time: number, playing: boolean) => {
-      const pool = activeAudioRef.current;
-      const clips = nativeClipsRef.current;
+  const syncAudioPlayback = useCallback((time: number, playing: boolean) => {
+    const pool = activeAudioRef.current;
+    const clips = nativeClipsRef.current;
 
-      if (!playing) {
-        for (const el of pool.values()) {
-          if (!el.paused) el.pause();
-        }
-        return;
+    if (!playing) {
+      for (const el of pool.values()) {
+        if (!el.paused) el.pause();
+      }
+      return;
+    }
+
+    // Find all audio-track clips that should be playing at this time
+    const activeKeys = new Set<string>();
+    for (const clip of clips) {
+      if (clip.trackKind !== "audio") continue;
+      if (clip.trackMuted) continue;
+      if (time < clip.timelineStart || time >= clip.timelineEnd) continue;
+      // Skip if already handled by the native video element
+      if (clip.key === nativeClipKeyRef.current) continue;
+
+      activeKeys.add(clip.key);
+      let el = pool.get(clip.key);
+      if (!el) {
+        el = new Audio();
+        el.src = convertFileSrc(clip.mediaPath);
+        el.preload = "auto";
+        pool.set(clip.key, el);
       }
 
-      // Find all audio-track clips that should be playing at this time
-      const activeKeys = new Set<string>();
-      for (const clip of clips) {
-        if (clip.trackKind !== "audio") continue;
-        if (clip.trackMuted) continue;
-        if (time < clip.timelineStart || time >= clip.timelineEnd) continue;
-        // Skip if already handled by the native video element
-        if (clip.key === nativeClipKeyRef.current) continue;
-
-        activeKeys.add(clip.key);
-        let el = pool.get(clip.key);
-        if (!el) {
-          el = new Audio();
-          el.src = convertFileSrc(clip.mediaPath);
-          el.preload = "auto";
-          pool.set(clip.key, el);
-        }
-
-        const sourceTime = clip.sourceStart + (time - clip.timelineStart);
-        const drift = Math.abs(el.currentTime - sourceTime);
-        if (drift > 0.3) {
-          el.currentTime = sourceTime;
-        }
-        if (el.paused) {
-          el.play().catch(() => {});
-        }
+      const sourceTime = clip.sourceStart + (time - clip.timelineStart);
+      const drift = Math.abs(el.currentTime - sourceTime);
+      if (drift > 0.3) {
+        el.currentTime = sourceTime;
       }
-
-      // Pause and clean up elements for clips no longer active
-      for (const [key, el] of pool.entries()) {
-        if (!activeKeys.has(key)) {
-          el.pause();
-          pool.delete(key);
-        }
+      if (el.paused) {
+        el.play().catch(() => {});
       }
-    },
-    [],
-  );
+    }
+
+    // Pause and clean up elements for clips no longer active
+    for (const [key, el] of pool.entries()) {
+      if (!activeKeys.has(key)) {
+        el.pause();
+        pool.delete(key);
+      }
+    }
+  }, []);
 
   const doSeek = useCallback(
     async (request: PendingSeek) => {
@@ -510,10 +567,14 @@ export function PreviewPanel() {
       if (!nativeHandled) {
         console.debug("[Preview] native path returned false, using FFmpeg fallback");
       }
-      if (nativeHandled) return;
+      if (nativeHandled) {
+        drawTextOverlays(request.time);
+        return;
+      }
 
       if (!clipsJson) {
         clearCanvas(request.width, request.height);
+        drawTextOverlays(request.time);
         return;
       }
 
@@ -530,22 +591,23 @@ export function PreviewPanel() {
       } catch {
         clearCanvas(request.width, request.height);
       }
+      drawTextOverlays(request.time);
     },
-    [clipsJson, clearCanvas, drawBitmapFrame, tryDrawNative],
+    [clipsJson, clearCanvas, drawBitmapFrame, tryDrawNative, drawTextOverlays],
   );
 
   const queueSeek = useCallback(
     (time: number, tierOverride?: PreviewTierIndex) => {
       const tier = tierOverride ?? activeTierRef.current;
-      const tierDef = PREVIEW_TIERS[tier];
+      const { width, height } = canvasSizeRef.current;
       const token = latestSeekTokenRef.current + 1;
       latestSeekTokenRef.current = token;
 
       pendingSeekRef.current = {
         token,
         time,
-        width: tierDef.width,
-        height: tierDef.height,
+        width,
+        height,
         tier,
       };
 
@@ -667,11 +729,35 @@ export function PreviewPanel() {
       cancelAnimationFrame(animFrameId);
       syncAudioPlayback(0, false);
     };
-  }, [isPlaying, previewTier, queueSeek, syncAudioPlayback, getTimelineEnd, setIsPlaying, setPlayheadTime]);
+  }, [
+    isPlaying,
+    previewTier,
+    queueSeek,
+    syncAudioPlayback,
+    getTimelineEnd,
+    setIsPlaying,
+    setPlayheadTime,
+  ]);
 
   useEffect(() => {
-    clearCanvas(activeTier.width, activeTier.height);
-  }, [activeTier.width, activeTier.height, clearCanvas]);
+    const el = wrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      if (width > 0 && height > 0) {
+        const w = Math.round(width);
+        const h = Math.round(height);
+        canvasSizeRef.current = { width: w, height: h };
+        if (!isPlayingRef.current) {
+          queueSeek(useUIStore.getState().playheadTime);
+        }
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [queueSeek]);
 
   useEffect(
     () => () => {
@@ -683,6 +769,96 @@ export function PreviewPanel() {
         el.src = "";
       }
       activeAudioRef.current.clear();
+    },
+    [],
+  );
+
+  const handleCanvasPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLCanvasElement>) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const canvasX = (e.clientX - rect.left) * scaleX;
+      const canvasY = (e.clientY - rect.top) * scaleY;
+      const normX = canvasX / canvas.width;
+      const normY = canvasY / canvas.height;
+
+      const { tracks: currentTracks } = useProjectStore.getState();
+      const currentTime = useUIStore.getState().playheadTime;
+
+      let closest: { clipId: string; dist: number } | null = null;
+      for (const track of currentTracks) {
+        if (track.kind !== "video" || !track.visible) continue;
+        for (const clip of track.clips) {
+          if (!clip.textProperties) continue;
+          const dur = clip.sourceEnd - clip.sourceStart;
+          const end = clip.timelineStart + dur;
+          if (currentTime < clip.timelineStart || currentTime >= end) continue;
+
+          const dx = normX - clip.textProperties.x;
+          const dy = normY - clip.textProperties.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < 0.1 && (!closest || dist < closest.dist)) {
+            closest = { clipId: clip.id, dist };
+          }
+        }
+      }
+
+      if (!closest) return;
+
+      e.preventDefault();
+      const clipId = closest.clipId;
+      useUIStore.getState().setSelectedClipId(clipId);
+
+      let clipTp: TextProperties | null = null;
+      for (const track of currentTracks) {
+        const c = track.clips.find((cl) => cl.id === clipId);
+        if (c?.textProperties) {
+          clipTp = c.textProperties;
+          break;
+        }
+      }
+      if (!clipTp) return;
+
+      const startNormX = normX;
+      const startNormY = normY;
+      const origX = clipTp.x;
+      const origY = clipTp.y;
+      let snapshotTaken = false;
+
+      const handleMove = (me: PointerEvent) => {
+        const r = canvas.getBoundingClientRect();
+        const cx = (me.clientX - r.left) * scaleX;
+        const cy = (me.clientY - r.top) * scaleY;
+        const newNormX = cx / canvas.width;
+        const newNormY = cy / canvas.height;
+        const ddx = newNormX - startNormX;
+        const ddy = newNormY - startNormY;
+
+        if (!snapshotTaken && (Math.abs(ddx) > 0.005 || Math.abs(ddy) > 0.005)) {
+          useProjectStore.getState().pushSnapshot();
+          snapshotTaken = true;
+        }
+
+        useProjectStore.getState().updateTextProperties(clipId, {
+          x: Math.max(0, Math.min(1, origX + ddx)),
+          y: Math.max(0, Math.min(1, origY + ddy)),
+        });
+      };
+
+      const handleUp = () => {
+        canvas.removeEventListener("pointermove", handleMove);
+        canvas.removeEventListener("pointerup", handleUp);
+        canvas.removeEventListener("pointercancel", handleUp);
+      };
+
+      canvas.setPointerCapture(e.pointerId);
+      canvas.addEventListener("pointermove", handleMove);
+      canvas.addEventListener("pointerup", handleUp);
+      canvas.addEventListener("pointercancel", handleUp);
     },
     [],
   );
@@ -700,11 +876,10 @@ export function PreviewPanel() {
 
   return (
     <div className="panel preview-panel">
-      <div className="preview-canvas-wrap">
+      <div className="preview-canvas-wrap" ref={wrapRef}>
         <canvas
           ref={canvasRef}
-          width={activeTier.width}
-          height={activeTier.height}
+          onPointerDown={handleCanvasPointerDown}
         />
       </div>
       <div className="preview-transport">

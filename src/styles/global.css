@@ -22,7 +22,6 @@
   --clip-selected: #88aed2;
 
   --toolbar-height: 44px;
-  --timeline-height: 35vh;
 
   font-family:
     "IBM Plex Sans",
@@ -107,10 +106,53 @@ select {
 
 .app-main {
   display: grid;
-  grid-template-columns: 260px 1fr 240px;
+  /* grid-template-columns set inline via JS */
   flex: 1;
   min-height: 0;
-  border-bottom: 1px solid var(--border);
+}
+
+.app-main--resizing {
+  cursor: col-resize;
+}
+
+.app--resizing-timeline {
+  cursor: row-resize;
+}
+
+.app-main--resizing *,
+.app--resizing-timeline * {
+  pointer-events: none;
+}
+
+.panel-resize-handle {
+  width: 4px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.12s;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.panel-resize-handle::after {
+  content: "";
+  position: absolute;
+  inset: 0 -2px;
+}
+
+.panel-resize-handle:hover,
+.app-main--resizing .panel-resize-handle,
+.panel-resize-handle--active {
+  background: var(--accent);
+}
+
+.panel-resize-handle--horizontal {
+  width: auto;
+  height: 4px;
+  cursor: row-resize;
+}
+
+.panel-resize-handle--horizontal::after {
+  inset: -2px 0;
 }
 
 .ffmpeg-warning {
@@ -206,7 +248,7 @@ select {
 /* ── Media Pool ────────────────────────────────────────────────────────────── */
 
 .media-pool {
-  border-right: 1px solid var(--border);
+  border-right: none;
 }
 
 .media-grid {
@@ -279,9 +321,8 @@ select {
 }
 
 .preview-canvas-wrap canvas {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
+  width: 100%;
+  height: 100%;
 }
 
 .preview-transport {
@@ -338,7 +379,7 @@ select {
 /* ── Inspector ─────────────────────────────────────────────────────────────── */
 
 .inspector-panel {
-  border-left: 1px solid var(--border);
+  border-left: none;
 }
 
 .inspector-empty {
@@ -370,7 +411,7 @@ select {
 /* ── Timeline ──────────────────────────────────────────────────────────────── */
 
 .timeline-panel {
-  height: var(--timeline-height);
+  /* height set inline via JS */
   display: flex;
   flex-direction: column;
   background: var(--bg-panel);
@@ -462,6 +503,12 @@ select {
 
 .track-lane--drop-target {
   background: rgba(62, 120, 194, 0.12);
+}
+
+.track-group-divider {
+  height: 4px;
+  background: var(--border);
+  flex-shrink: 0;
 }
 
 /* ── Clips on timeline ─────────────────────────────────────────────────────── */
@@ -742,4 +789,155 @@ select {
   height: 1px;
   background: var(--border);
   margin: 4px 0;
+}
+
+/* ── Left Panel Tabs ───────────────────────────────────────────────────────── */
+
+.left-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.left-panel-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.left-panel-tab {
+  flex: 1;
+  padding: 8px 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    color 0.12s,
+    border-color 0.12s;
+}
+
+.left-panel-tab:hover {
+  color: var(--text-primary);
+}
+
+.left-panel-tab--active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent);
+}
+
+/* ── Toolbox Grid ──────────────────────────────────────────────────────────── */
+
+.toolbox-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 12px;
+}
+
+.toolbox-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 16px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-panel-alt);
+  color: var(--text-primary);
+  cursor: pointer;
+  position: relative;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+
+.toolbox-card:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+.toolbox-card--disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.toolbox-card-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.toolbox-card-label {
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.toolbox-card-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--accent-dim);
+  color: var(--text-primary);
+  font-size: 8px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  line-height: 1;
+}
+
+/* ── Text Clip (Timeline) ──────────────────────────────────────────────────── */
+
+.clip--text {
+  background: #8b6fb0;
+}
+
+/* ── Inspector Text Controls ───────────────────────────────────────────────── */
+
+.inspector-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.inspector-text-input {
+  width: 100%;
+  margin-top: 2px;
+}
+
+.inspector-color-input {
+  width: 40px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  background: transparent;
+}
+
+.inspector-field select {
+  width: 100%;
+}
+
+.inspector-field input[type="range"] {
+  width: 80px;
+  accent-color: var(--accent);
+}
+
+.inspector-field input[type="number"] {
+  width: 60px;
+  text-align: right;
+}
+
+/* ── Export Text Warning ───────────────────────────────────────────────────── */
+
+.export-text-warning {
+  background: #3d3421;
+  color: #f3bf66;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  margin-top: 8px;
 }

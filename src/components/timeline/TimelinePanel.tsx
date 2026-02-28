@@ -1,12 +1,21 @@
-import { useRef, useCallback, useEffect } from "react";
+import { useMemo, useRef, useCallback, useEffect } from "react";
 import { useProjectStore } from "../../stores/project-store";
 import { useUIStore } from "../../stores/ui-store";
 import { TimeRuler } from "./TimeRuler";
 import { TrackLane } from "./TrackLane";
 
-export function TimelinePanel() {
+export function TimelinePanel({ style }: { style?: React.CSSProperties }) {
   const tracks = useProjectStore((s) => s.tracks);
   const addTrack = useProjectStore((s) => s.addTrack);
+
+  const videoTracks = useMemo(
+    () => tracks.filter((t) => t.kind === "video"),
+    [tracks],
+  );
+  const audioTracks = useMemo(
+    () => tracks.filter((t) => t.kind === "audio"),
+    [tracks],
+  );
   const zoom = useUIStore((s) => s.timelineZoom);
   const setZoom = useUIStore((s) => s.setTimelineZoom);
   const scrollX = useUIStore((s) => s.timelineScrollX);
@@ -77,7 +86,7 @@ export function TimelinePanel() {
   const playheadX = playheadTime * zoom - scrollX;
 
   return (
-    <div className="timeline-panel">
+    <div className="timeline-panel" style={style}>
       {/* Timeline toolbar */}
       <div className="timeline-toolbar">
         <button
@@ -110,12 +119,17 @@ export function TimelinePanel() {
       <div className="timeline-body">
         {/* Track headers */}
         <div className="timeline-track-headers">
-          {tracks.map((track, i) => (
+          {videoTracks.map((track, i) => (
             <div key={track.id} className="track-header">
-              <span className="track-header-name">
-                {track.kind === "video" ? "V" : "A"}
-                {i + 1}
-              </span>
+              <span className="track-header-name">V{i + 1}</span>
+            </div>
+          ))}
+          {audioTracks.length > 0 && videoTracks.length > 0 && (
+            <div className="track-group-divider" />
+          )}
+          {audioTracks.map((track, i) => (
+            <div key={track.id} className="track-header">
+              <span className="track-header-name">A{i + 1}</span>
             </div>
           ))}
         </div>
@@ -147,7 +161,13 @@ export function TimelinePanel() {
         >
           <div style={{ width: contentWidth, minWidth: "100%" }}>
             <TimeRuler width={contentWidth} />
-            {tracks.map((track) => (
+            {videoTracks.map((track) => (
+              <TrackLane key={track.id} track={track} />
+            ))}
+            {audioTracks.length > 0 && videoTracks.length > 0 && (
+              <div className="track-group-divider" />
+            )}
+            {audioTracks.map((track) => (
               <TrackLane key={track.id} track={track} />
             ))}
           </div>

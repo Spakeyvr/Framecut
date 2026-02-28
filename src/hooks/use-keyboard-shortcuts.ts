@@ -115,6 +115,19 @@ export function useKeyboardShortcuts() {
         return;
       }
 
+      // T: add text clip at playhead
+      if (e.code === SHORTCUT_BINDINGS.TEXT_TOOL && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        const videoTrack = project.tracks.find((t) => t.kind === "video");
+        if (videoTrack) {
+          const clipId = project.addTextClip(videoTrack.id, ui.playheadTime);
+          if (clipId) {
+            ui.setSelectedClipId(clipId);
+          }
+        }
+        return;
+      }
+
       // S: split selected clip at playhead
       if (e.code === SHORTCUT_BINDINGS.SPLIT && !e.ctrlKey && !e.metaKey) {
         if (ui.selectedClipId) {

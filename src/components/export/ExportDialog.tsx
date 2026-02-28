@@ -16,6 +16,7 @@ import {
   hwAccelSupportsCodec,
 } from "../../types";
 import type { ClipRef, ExportFormat, HwAccelMode } from "../../types";
+import { isTextClip } from "../../types";
 
 const DEFAULT_PRESET = EXPORT_PRESETS[0];
 
@@ -40,8 +41,9 @@ export function ExportDialog() {
   })();
 
   // Find the closest standard frame rate, or use the exact value
-  const defaultFps = FRAME_RATES.find((fr) => fr.value === Math.round(detectedFps))?.value
-    ?? Math.round(detectedFps);
+  const defaultFps =
+    FRAME_RATES.find((fr) => fr.value === Math.round(detectedFps))?.value ??
+    Math.round(detectedFps);
 
   // Preset & individual settings state
   const [selectedPresetId, setSelectedPresetId] = useState<string | "custom">(
@@ -229,7 +231,9 @@ export function ExportDialog() {
       .finally(() => {
         if (!cancelled) setDetectingHw(false);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // ── Export action ───────────────────────────────────────────────────────────
@@ -240,6 +244,7 @@ export function ExportDialog() {
     const clipRefs: ClipRef[] = [];
     for (const track of tracks) {
       for (const clip of track.clips) {
+        if (isTextClip(clip)) continue;
         const m = media.find((item) => item.id === clip.mediaId);
         if (m) {
           clipRefs.push({
@@ -313,11 +318,7 @@ export function ExportDialog() {
         }
       }}
     >
-      <div
-        className="modal-dialog export-dialog"
-        role="dialog"
-        aria-modal="true"
-      >
+      <div className="modal-dialog export-dialog" role="dialog" aria-modal="true">
         <div className="modal-header">
           <h2>Export Video</h2>
         </div>
@@ -425,8 +426,16 @@ export function ExportDialog() {
             })}
           </select>
           {!hwAccelValid && hwAccel !== "cpu" && (
-            <span style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2, display: "block" }}>
-              {CODECS.find(c => c.id === codecId)?.label ?? codecId} has no GPU encoder — will use CPU
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--text-secondary)",
+                marginTop: 2,
+                display: "block",
+              }}
+            >
+              {CODECS.find((c) => c.id === codecId)?.label ?? codecId} has no GPU encoder
+              — will use CPU
             </span>
           )}
         </div>
@@ -441,16 +450,21 @@ export function ExportDialog() {
           >
             {FRAME_RATES.map((fr) => (
               <option key={fr.value} value={fr.value}>
-                {fr.label}{fr.value === defaultFps ? " (source)" : ""}
+                {fr.label}
+                {fr.value === defaultFps ? " (source)" : ""}
               </option>
             ))}
             {!FRAME_RATES.some((fr) => fr.value === defaultFps) && (
-              <option value={defaultFps}>
-                {defaultFps} fps (source)
-              </option>
+              <option value={defaultFps}>{defaultFps} fps (source)</option>
             )}
           </select>
         </div>
+
+        {tracks.some((t) => t.clips.some((c) => isTextClip(c))) && (
+          <div className="export-text-warning">
+            Text overlays are preview-only and will not appear in the exported video.
+          </div>
+        )}
 
         {error && <div className="dialog-error">{error}</div>}
 
@@ -475,10 +489,7 @@ export function ExportDialog() {
             {exporting ? "Cancel" : "Close"}
           </button>
           {!exporting && progress < 1 && (
-            <button
-              className="toolbar-btn toolbar-btn--accent"
-              onClick={handleExport}
-            >
+            <button className="toolbar-btn toolbar-btn--accent" onClick={handleExport}>
               Export
             </button>
           )}

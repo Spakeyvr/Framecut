@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useUIStore } from "../../stores/ui-store";
 import { useProjectStore } from "../../stores/project-store";
 import type { Clip, Track } from "../../types";
-import { clipDuration } from "../../types";
+import { clipDuration, isTextClip } from "../../types";
 
 interface ClipViewProps {
   clip: Clip;
@@ -28,6 +28,7 @@ export function ClipView({ clip, track }: ClipViewProps) {
   const media = useProjectStore((s) => s.media);
 
   const mediaItem = media.find((m) => m.id === clip.mediaId);
+  const isText = isTextClip(clip);
   const isSelected = selectedClipId === clip.id;
   const duration = clipDuration(clip);
 
@@ -157,7 +158,7 @@ export function ClipView({ clip, track }: ClipViewProps) {
   return (
     <>
       <div
-        className={`clip clip--${track.kind} ${isSelected ? "clip--selected" : ""}`}
+        className={`clip ${isText ? "clip--text" : `clip--${track.kind}`} ${isSelected ? "clip--selected" : ""}`}
         style={{ left, width: Math.max(width, 2) }}
         onClick={(e) => {
           e.stopPropagation();
@@ -171,7 +172,9 @@ export function ClipView({ clip, track }: ClipViewProps) {
           onPointerDown={(e) => handlePointerDown(e, "trim-left")}
         />
 
-        <span className="clip-label">{mediaItem?.name ?? "?"}</span>
+        <span className="clip-label">
+          {isText ? `T: ${clip.textProperties!.content}` : (mediaItem?.name ?? "?")}
+        </span>
 
         <div
           className="clip-handle clip-handle--right"

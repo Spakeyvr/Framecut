@@ -2,7 +2,11 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { useProjectStore } from "../../stores/project-store";
 import { useUIStore } from "../../stores/ui-store";
 import { importMediaDialog } from "../../api/commands";
-import { MEDIA_DND_MIME, MEDIA_DND_TEXT_PREFIX, setDragMediaType } from "../../constants/dnd";
+import {
+  MEDIA_DND_MIME,
+  MEDIA_DND_TEXT_PREFIX,
+  setDragMediaType,
+} from "../../constants/dnd";
 import type { MediaItem } from "../../types";
 
 function formatDuration(seconds: number): string {
@@ -76,7 +80,7 @@ export function MediaPool() {
   };
 
   return (
-    <div className="panel media-pool">
+    <>
       <div className="panel-header">
         <span>Media</span>
         <button className="toolbar-btn" onClick={handleImport}>
@@ -97,6 +101,6 @@ export function MediaPool() {
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }
