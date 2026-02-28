@@ -78,6 +78,18 @@ pub struct ClipRef {
     pub has_audio: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextOverlayRef {
+    pub content: String,
+    pub font_family: String,
+    pub font_size: f64,
+    pub color: String,
+    pub x: f64,
+    pub y: f64,
+    pub output_start: f64,
+    pub output_end: f64,
+}
+
 fn default_format() -> String {
     "mp4".to_string()
 }
@@ -100,6 +112,8 @@ pub struct ExportRequest {
     pub format: String,
     #[serde(default = "default_hw_accel")]
     pub hw_accel: String,
+    #[serde(default)]
+    pub text_overlays: Vec<TextOverlayRef>,
 }
 
 // ── Project commands ──────────────────────────────────────────────────────────

@@ -23,6 +23,18 @@ fn default_hw_accel() -> String {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TextOverlayRef {
+    pub content: String,
+    pub font_family: String,
+    pub font_size: f64,
+    pub color: String,
+    pub x: f64,
+    pub y: f64,
+    pub output_start: f64,
+    pub output_end: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportRequest {
     pub clips: Vec<ClipRef>,
     pub output_path: String,
@@ -36,6 +48,8 @@ pub struct ExportRequest {
     pub format: String,
     #[serde(default = "default_hw_accel")]
     pub hw_accel: String,
+    #[serde(default)]
+    pub text_overlays: Vec<TextOverlayRef>,
 }
 
 /// Map a hardware encoder name back to its logical codec for format validation.
@@ -57,10 +71,7 @@ fn validate_codec_format(encoder: &str, format: &str) -> Result<(), String> {
         _ => false,
     };
     if !valid {
-        return Err(format!(
-            "Codec '{}' is not compatible with format '{}'",
-            encoder, format
-        ));
+        return Err(format!("Codec '{}' is not compatible with format '{}'", encoder, format));
     }
     Ok(())
 }
@@ -89,46 +100,66 @@ fn append_quality_args(args: &mut Vec<String>, encoder: &str, crf: u32) {
     match encoder {
         "h264_nvenc" | "hevc_nvenc" | "av1_nvenc" => {
             args.extend([
-                "-rc".to_string(), "vbr".to_string(),
-                "-cq".to_string(), crf.to_string(),
-                "-preset".to_string(), "p5".to_string(),
-                "-tune".to_string(), "hq".to_string(),
-                "-multipass".to_string(), "fullres".to_string(),
+                "-rc".to_string(),
+                "vbr".to_string(),
+                "-cq".to_string(),
+                crf.to_string(),
+                "-preset".to_string(),
+                "p5".to_string(),
+                "-tune".to_string(),
+                "hq".to_string(),
+                "-multipass".to_string(),
+                "fullres".to_string(),
             ]);
         }
         "h264_qsv" | "hevc_qsv" => {
             args.extend([
-                "-global_quality".to_string(), crf.to_string(),
-                "-preset".to_string(), "medium".to_string(),
-                "-look_ahead".to_string(), "1".to_string(),
+                "-global_quality".to_string(),
+                crf.to_string(),
+                "-preset".to_string(),
+                "medium".to_string(),
+                "-look_ahead".to_string(),
+                "1".to_string(),
             ]);
         }
         "h264_amf" | "hevc_amf" => {
             args.extend([
-                "-rc".to_string(), "cqp".to_string(),
-                "-qp_i".to_string(), crf.to_string(),
-                "-qp_p".to_string(), (crf + 2).to_string(),
-                "-quality".to_string(), "quality".to_string(),
+                "-rc".to_string(),
+                "cqp".to_string(),
+                "-qp_i".to_string(),
+                crf.to_string(),
+                "-qp_p".to_string(),
+                (crf + 2).to_string(),
+                "-quality".to_string(),
+                "quality".to_string(),
             ]);
         }
         "libx264" | "libx265" => {
             args.extend([
-                "-crf".to_string(), crf.to_string(),
-                "-preset".to_string(), "medium".to_string(),
+                "-crf".to_string(),
+                crf.to_string(),
+                "-preset".to_string(),
+                "medium".to_string(),
             ]);
         }
         "libvpx-vp9" => {
             args.extend([
-                "-crf".to_string(), crf.to_string(),
-                "-b:v".to_string(), "0".to_string(),
-                "-speed".to_string(), "2".to_string(),
+                "-crf".to_string(),
+                crf.to_string(),
+                "-b:v".to_string(),
+                "0".to_string(),
+                "-speed".to_string(),
+                "2".to_string(),
             ]);
         }
         "libaom-av1" => {
             args.extend([
-                "-crf".to_string(), crf.to_string(),
-                "-b:v".to_string(), "0".to_string(),
-                "-cpu-used".to_string(), "4".to_string(),
+                "-crf".to_string(),
+                crf.to_string(),
+                "-b:v".to_string(),
+                "0".to_string(),
+                "-cpu-used".to_string(),
+                "4".to_string(),
             ]);
         }
         _ => {
@@ -150,11 +181,8 @@ pub fn detect_hw_encoders() -> Result<Vec<String>, String> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
-    let hw_encoder_names = [
-        "h264_nvenc", "hevc_nvenc", "av1_nvenc",
-        "h264_qsv", "hevc_qsv",
-        "h264_amf", "hevc_amf",
-    ];
+    let hw_encoder_names =
+        ["h264_nvenc", "hevc_nvenc", "av1_nvenc", "h264_qsv", "hevc_qsv", "h264_amf", "hevc_amf"];
 
     let mut found = Vec::new();
     for line in stdout.lines() {
@@ -167,6 +195,91 @@ pub fn detect_hw_encoders() -> Result<Vec<String>, String> {
     }
 
     Ok(found)
+}
+
+/// Escape text for FFmpeg's drawtext filter.
+/// FFmpeg drawtext requires escaping: \, ', :, ;, [, ], and %
+fn escape_drawtext(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() * 2);
+    for ch in s.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\\\\\"),
+            '\'' => out.push_str("'\\\\\\''"),
+            ':' => out.push_str("\\\\:"),
+            ';' => out.push_str("\\\\;"),
+            '[' => out.push_str("\\\\["),
+            ']' => out.push_str("\\\\]"),
+            '%' => out.push_str("%%%%"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
+/// Convert a CSS hex color (#rrggbb or #rgb) to FFmpeg's 0xRRGGBB format.
+fn css_color_to_ffmpeg(color: &str) -> String {
+    let hex = color.trim_start_matches('#');
+    let expanded = if hex.len() == 3 {
+        // Expand #RGB to #RRGGBB
+        let chars: Vec<char> = hex.chars().collect();
+        format!("{}{}{}{}{}{}", chars[0], chars[0], chars[1], chars[1], chars[2], chars[2])
+    } else {
+        hex.to_string()
+    };
+    format!("0x{expanded}")
+}
+
+/// Build chained drawtext filter expressions for text overlays.
+/// Returns (filter_string, final_label) or None if no overlays.
+fn build_drawtext_filters(
+    overlays: &[TextOverlayRef],
+    export_height: u32,
+    start_label: &str,
+) -> Option<(String, String)> {
+    if overlays.is_empty() {
+        return None;
+    }
+
+    let mut filter = String::new();
+    let mut prev_label = start_label.to_string();
+
+    for (i, overlay) in overlays.iter().enumerate() {
+        let label = format!("dtxt{i}");
+
+        // Scale font size from 1080p reference to export resolution
+        let scaled_size = (overlay.font_size / 1080.0) * f64::from(export_height);
+        let font_size = scaled_size.round().max(1.0) as u32;
+
+        // Shadow offset: ~4% of font size, minimum 1px
+        let shadow_offset = ((scaled_size * 0.04).round() as u32).max(1);
+
+        let color = css_color_to_ffmpeg(&overlay.color);
+        let text = escape_drawtext(&overlay.content);
+        let font = escape_drawtext(&overlay.font_family);
+
+        // Position: convert normalized 0–1 coords to FFmpeg expressions
+        // x=0.5 means center, so: x = (w * nx) - text_w/2
+        // y=0.5 means center, so: y = (h * ny) - text_h/2
+        let x_expr = format!("(w*{:.4}-text_w/2)", overlay.x);
+        let y_expr = format!("(h*{:.4}-text_h/2)", overlay.y);
+
+        filter.push_str(&format!(
+            "[{prev_label}]drawtext=font='{font}':fontsize={font_size}:\
+             fontcolor={color}:x={x_expr}:y={y_expr}:\
+             shadowcolor=black@0.6:shadowx={shadow_offset}:shadowy={shadow_offset}:\
+             text='{text}':enable='between(t,{:.3},{:.3})'[{label}]",
+            overlay.output_start, overlay.output_end,
+        ));
+
+        if i < overlays.len() - 1 {
+            filter.push(';');
+        }
+
+        prev_label = label;
+    }
+
+    let final_label = format!("dtxt{}", overlays.len() - 1);
+    Some((filter, final_label))
 }
 
 /// Build an FFmpeg concat file and command for the export.
@@ -188,10 +301,8 @@ fn build_ffmpeg_args(
         .iter()
         .any(|clip| paths_refer_to_same_file(&clip.media_path, &request.output_path))
     {
-        return Err(
-            "Output path matches an input media file. Choose a different output filename."
-                .to_string(),
-        );
+        return Err("Output path matches an input media file. Choose a different output filename."
+            .to_string());
     }
 
     // Build a concat-style filter complex
@@ -250,22 +361,30 @@ fn build_ffmpeg_args(
 
     // Audio concat only when all clips report audio.
     let include_audio = sorted_clips.iter().all(|clip| clip.has_audio);
-    let full_filter = if include_audio {
+    let mut full_filter = if include_audio {
         let mut audio_inputs = String::new();
         for i in 0..sorted_clips.len() {
             audio_inputs.push_str(&format!("[{i}:a]"));
         }
-        format!(
-            "{filter_complex};{audio_inputs}concat=n={}:v=0:a=1[outa]",
-            sorted_clips.len()
-        )
+        format!("{filter_complex};{audio_inputs}concat=n={}:v=0:a=1[outa]", sorted_clips.len())
     } else {
         filter_complex
     };
 
+    // Chain drawtext filters for text overlays after concat
+    let video_out_label = if let Some((dt_filter, final_label)) =
+        build_drawtext_filters(&request.text_overlays, request.height, "outv")
+    {
+        full_filter.push(';');
+        full_filter.push_str(&dt_filter);
+        format!("[{final_label}]")
+    } else {
+        "[outv]".to_string()
+    };
+
     args.extend(["-filter_complex".to_string(), full_filter]);
 
-    args.extend(["-map".to_string(), "[outv]".to_string()]);
+    args.extend(["-map".to_string(), video_out_label]);
     if include_audio {
         args.extend(["-map".to_string(), "[outa]".to_string()]);
     }
@@ -281,10 +400,7 @@ fn build_ffmpeg_args(
     // Apply encoder-specific quality/rate-control flags
     append_quality_args(&mut args, &encoder, request.crf);
 
-    args.extend([
-        "-r".to_string(),
-        format!("{}", request.fps),
-    ]);
+    args.extend(["-r".to_string(), format!("{}", request.fps)]);
 
     if include_audio {
         let audio_codec = match request.format.as_str() {
@@ -408,9 +524,7 @@ pub async fn run_export(
         if stderr_excerpt.is_empty() {
             return Err(format!("FFmpeg exited with code: {code}"));
         }
-        return Err(format!(
-            "FFmpeg exited with code: {code}\n{stderr_excerpt}"
-        ));
+        return Err(format!("FFmpeg exited with code: {code}\n{stderr_excerpt}"));
     }
 
     Ok(())
@@ -431,10 +545,7 @@ fn parse_ffmpeg_time(s: &str) -> Option<f64> {
 }
 
 fn is_image_path(path: &str) -> bool {
-    let ext = Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_ascii_lowercase());
+    let ext = Path::new(path).extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase());
 
     matches!(
         ext.as_deref(),
@@ -453,7 +564,8 @@ fn paths_refer_to_same_file(a: &str, b: &str) -> bool {
     let path_a = Path::new(a);
     let path_b = Path::new(b);
 
-    if let (Ok(canon_a), Ok(canon_b)) = (std::fs::canonicalize(path_a), std::fs::canonicalize(path_b))
+    if let (Ok(canon_a), Ok(canon_b)) =
+        (std::fs::canonicalize(path_a), std::fs::canonicalize(path_b))
     {
         return canon_a == canon_b;
     }
@@ -465,9 +577,7 @@ fn normalize_path_for_compare(path: &Path) -> String {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
     } else {
-        std::env::current_dir()
-            .unwrap_or_else(|_| PathBuf::from("."))
-            .join(path)
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).join(path)
     };
 
     #[cfg(windows)]
@@ -493,5 +603,117 @@ mod tests {
     fn test_parse_ffmpeg_time() {
         assert!((parse_ffmpeg_time("00:01:30.50").unwrap() - 90.5).abs() < 0.01);
         assert!((parse_ffmpeg_time("00:00:05.00").unwrap() - 5.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_escape_drawtext_plain() {
+        assert_eq!(escape_drawtext("Hello World"), "Hello World");
+    }
+
+    #[test]
+    fn test_escape_drawtext_special_chars() {
+        assert_eq!(escape_drawtext("it's"), "it'\\\\\\''s");
+        assert_eq!(escape_drawtext("a:b"), "a\\\\:b");
+        assert_eq!(escape_drawtext("100%"), "100%%%%");
+        assert_eq!(escape_drawtext("[tag]"), "\\\\[tag\\\\]");
+        assert_eq!(escape_drawtext("a;b"), "a\\\\;b");
+    }
+
+    #[test]
+    fn test_css_color_to_ffmpeg() {
+        assert_eq!(css_color_to_ffmpeg("#ffffff"), "0xffffff");
+        assert_eq!(css_color_to_ffmpeg("#ff0000"), "0xff0000");
+        assert_eq!(css_color_to_ffmpeg("#abc"), "0xaabbcc");
+    }
+
+    #[test]
+    fn test_build_drawtext_filters_empty() {
+        assert!(build_drawtext_filters(&[], 1080, "outv").is_none());
+    }
+
+    #[test]
+    fn test_build_drawtext_filters_single() {
+        let overlays = vec![TextOverlayRef {
+            content: "Hello".to_string(),
+            font_family: "Arial".to_string(),
+            font_size: 48.0,
+            color: "#ffffff".to_string(),
+            x: 0.5,
+            y: 0.5,
+            output_start: 2.0,
+            output_end: 5.0,
+        }];
+        let (filter, label) = build_drawtext_filters(&overlays, 1080, "outv").unwrap();
+        assert_eq!(label, "dtxt0");
+        assert!(filter.contains("drawtext="));
+        assert!(filter.contains("font='Arial'"));
+        assert!(filter.contains("fontsize=48"));
+        assert!(filter.contains("fontcolor=0xffffff"));
+        assert!(filter.contains("text='Hello'"));
+        assert!(filter.contains("enable='between(t,2.000,5.000)'"));
+        assert!(filter.contains("[outv]"));
+        assert!(filter.contains("[dtxt0]"));
+    }
+
+    #[test]
+    fn test_build_drawtext_filters_multiple() {
+        let overlays = vec![
+            TextOverlayRef {
+                content: "First".to_string(),
+                font_family: "Arial".to_string(),
+                font_size: 48.0,
+                color: "#ffffff".to_string(),
+                x: 0.5,
+                y: 0.3,
+                output_start: 0.0,
+                output_end: 3.0,
+            },
+            TextOverlayRef {
+                content: "Second".to_string(),
+                font_family: "Impact".to_string(),
+                font_size: 64.0,
+                color: "#ff0000".to_string(),
+                x: 0.5,
+                y: 0.7,
+                output_start: 2.0,
+                output_end: 6.0,
+            },
+        ];
+        let (filter, label) = build_drawtext_filters(&overlays, 1080, "outv").unwrap();
+        assert_eq!(label, "dtxt1");
+        // Should chain: [outv]drawtext=...[dtxt0];[dtxt0]drawtext=...[dtxt1]
+        assert!(filter.contains("[outv]drawtext="));
+        assert!(filter.contains("[dtxt0];[dtxt0]drawtext="));
+        assert!(filter.contains("[dtxt1]"));
+    }
+
+    #[test]
+    fn test_build_drawtext_filters_scaled_resolution() {
+        let overlays = vec![TextOverlayRef {
+            content: "Hi".to_string(),
+            font_family: "Arial".to_string(),
+            font_size: 48.0,
+            color: "#ffffff".to_string(),
+            x: 0.5,
+            y: 0.5,
+            output_start: 0.0,
+            output_end: 1.0,
+        }];
+        // At 720p, font_size 48 should scale to 48/1080*720 = 32
+        let (filter, _) = build_drawtext_filters(&overlays, 720, "outv").unwrap();
+        assert!(filter.contains("fontsize=32"));
+    }
+
+    #[test]
+    fn test_text_overlays_deserialization_default() {
+        let json = r#"{
+            "clips": [],
+            "output_path": "out.mp4",
+            "width": 1920, "height": 1080,
+            "fps": 30.0, "codec": "libx264",
+            "crf": 20, "audio_bitrate": "192k"
+        }"#;
+        let req: ExportRequest = serde_json::from_str(json).unwrap();
+        assert!(req.text_overlays.is_empty());
     }
 }

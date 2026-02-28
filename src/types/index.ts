@@ -292,3 +292,15 @@ export interface ClipRef {
   timelineStart: number;
   hasAudio?: boolean;
 }
+
+/** Text overlay mapped to the compressed output timeline for FFmpeg drawtext */
+export interface TextOverlayRef {
+  content: string;
+  fontFamily: string;
+  fontSize: number;
+  color: string;
+  x: number;
+  y: number;
+  outputStart: number; // seconds in compressed output timeline
+  outputEnd: number;
+}

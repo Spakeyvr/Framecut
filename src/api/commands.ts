@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save, confirm } from "@tauri-apps/plugin-dialog";
-import type { MediaItem, ClipRef } from "../types";
+import type { MediaItem, ClipRef, TextOverlayRef } from "../types";
 
 // ── FFmpeg check ─────────────────────────────────────────────────────────────
 
@@ -144,6 +144,7 @@ export interface ExportRequestPayload {
   audioBitrate: string;
   format: string;
   hwAccel: string;
+  textOverlays?: TextOverlayRef[];
 }
 
 export const startExport = async (payload: ExportRequestPayload): Promise<string> => {
@@ -164,6 +165,16 @@ export const startExport = async (payload: ExportRequestPayload): Promise<string
     audio_bitrate: payload.audioBitrate,
     format: payload.format,
     hw_accel: payload.hwAccel,
+    text_overlays: (payload.textOverlays ?? []).map((t) => ({
+      content: t.content,
+      font_family: t.fontFamily,
+      font_size: t.fontSize,
+      color: t.color,
+      x: t.x,
+      y: t.y,
+      output_start: t.outputStart,
+      output_end: t.outputEnd,
+    })),
   };
   const json = await invoke<string>("start_export", { request });
   const result = JSON.parse(json);

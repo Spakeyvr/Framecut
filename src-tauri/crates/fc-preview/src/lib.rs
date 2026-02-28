@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::process::Stdio;
 use std::time::Instant;
-use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClipRef {
@@ -87,17 +87,11 @@ fn decode_frame_with_metrics(
         return Err(format!("ffmpeg frame decode failed: {stderr}"));
     }
 
-    Ok(PreviewDecodeResult {
-        frame: output.stdout,
-        metrics: DecodeMetrics { spawn_ms, total_ms },
-    })
+    Ok(PreviewDecodeResult { frame: output.stdout, metrics: DecodeMetrics { spawn_ms, total_ms } })
 }
 
 fn is_image_path(path: &str) -> bool {
-    let ext = Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_ascii_lowercase());
+    let ext = Path::new(path).extension().and_then(|e| e.to_str()).map(|e| e.to_ascii_lowercase());
 
     matches!(
         ext.as_deref(),

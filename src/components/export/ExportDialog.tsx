@@ -15,8 +15,8 @@ import {
   HW_ACCEL_OPTIONS,
   hwAccelSupportsCodec,
 } from "../../types";
-import type { ClipRef, ExportFormat, HwAccelMode } from "../../types";
-import { isTextClip } from "../../types";
+import type { ClipRef, TextOverlayRef, ExportFormat, HwAccelMode } from "../../types";
+import { isTextClip, clipEnd } from "../../types";
 
 const DEFAULT_PRESET = EXPORT_PRESETS[0];
 
@@ -242,9 +242,33 @@ export function ExportDialog() {
     setError(null);
 
     const clipRefs: ClipRef[] = [];
+    const textClips: {
+      content: string;
+      fontFamily: string;
+      fontSize: number;
+      color: string;
+      x: number;
+      y: number;
+      timelineStart: number;
+      timelineEnd: number;
+    }[] = [];
+
     for (const track of tracks) {
       for (const clip of track.clips) {
-        if (isTextClip(clip)) continue;
+        if (isTextClip(clip)) {
+          const tp = clip.textProperties!;
+          textClips.push({
+            content: tp.content,
+            fontFamily: tp.fontFamily,
+            fontSize: tp.fontSize,
+            color: tp.color,
+            x: tp.x,
+            y: tp.y,
+            timelineStart: clip.timelineStart,
+            timelineEnd: clipEnd(clip),
+          });
+          continue;
+        }
         const m = media.find((item) => item.id === clip.mediaId);
         if (m) {
           clipRefs.push({
@@ -261,6 +285,42 @@ export function ExportDialog() {
     if (clipRefs.length === 0) {
       setError("No clips on timeline to export");
       return;
+    }
+
+    // Build timeline mapping: editor-time segments → compressed output timeline
+    const sortedClips = [...clipRefs].sort((a, b) => a.timelineStart - b.timelineStart);
+    const segments: { editorStart: number; editorEnd: number; outputOffset: number }[] =
+      [];
+    let cumulativeOutput = 0;
+    for (const c of sortedClips) {
+      const dur = c.sourceEnd - c.sourceStart;
+      segments.push({
+        editorStart: c.timelineStart,
+        editorEnd: c.timelineStart + dur,
+        outputOffset: cumulativeOutput,
+      });
+      cumulativeOutput += dur;
+    }
+
+    // Map text clips to output timeline via overlap with media segments
+    const textOverlays: TextOverlayRef[] = [];
+    for (const tc of textClips) {
+      for (const seg of segments) {
+        const overlapStart = Math.max(tc.timelineStart, seg.editorStart);
+        const overlapEnd = Math.min(tc.timelineEnd, seg.editorEnd);
+        if (overlapStart < overlapEnd) {
+          textOverlays.push({
+            content: tc.content,
+            fontFamily: tc.fontFamily,
+            fontSize: tc.fontSize,
+            color: tc.color,
+            x: tc.x,
+            y: tc.y,
+            outputStart: seg.outputOffset + (overlapStart - seg.editorStart),
+            outputEnd: seg.outputOffset + (overlapEnd - seg.editorStart),
+          });
+        }
+      }
     }
 
     const outputPath = await save({
@@ -289,6 +349,7 @@ export function ExportDialog() {
         audioBitrate,
         format,
         hwAccel,
+        textOverlays,
       });
       if (!currentJobIdRef.current || currentJobIdRef.current === id) {
         setJobId(id);
@@ -459,12 +520,6 @@ export function ExportDialog() {
             )}
           </select>
         </div>
-
-        {tracks.some((t) => t.clips.some((c) => isTextClip(c))) && (
-          <div className="export-text-warning">
-            Text overlays are preview-only and will not appear in the exported video.
-          </div>
-        )}
 
         {error && <div className="dialog-error">{error}</div>}
 
