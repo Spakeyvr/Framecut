@@ -14,6 +14,7 @@ Implemented:
 - Undo/redo
 - Export timeline with progress and cancel support
 - Full project saving
+- GPU or CPU export options
 - Help section
 
 Not fully implemented yet:
