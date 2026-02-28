@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { Clip } from "../types";
 
 export type LeftPanelTab = "media" | "toolbox";
 
@@ -9,6 +10,10 @@ interface UIState {
 
   // Selection
   selectedClipId: string | null;
+  selectedClipIds: string[];
+
+  // Clipboard
+  clipboardClips: Clip[];
 
   // Timeline viewport
   timelineZoom: number; // pixels per second
@@ -32,6 +37,8 @@ interface UIState {
   setPlayheadTime: (time: number) => void;
   setIsPlaying: (playing: boolean) => void;
   setSelectedClipId: (id: string | null) => void;
+  toggleClipSelection: (id: string) => void;
+  setClipboardClips: (clips: Clip[]) => void;
   setTimelineZoom: (zoom: number) => void;
   setTimelineScrollX: (x: number) => void;
   setLeftPanelTab: (tab: LeftPanelTab) => void;
@@ -49,6 +56,8 @@ export const useUIStore = create<UIState>()((set) => ({
   playheadTime: 0,
   isPlaying: false,
   selectedClipId: null,
+  selectedClipIds: [],
+  clipboardClips: [],
   timelineZoom: 80,
   timelineScrollX: 0,
   leftPanelTab: "media",
@@ -60,7 +69,17 @@ export const useUIStore = create<UIState>()((set) => ({
 
   setPlayheadTime: (time) => set({ playheadTime: Math.max(0, time) }),
   setIsPlaying: (playing) => set({ isPlaying: playing }),
-  setSelectedClipId: (id) => set({ selectedClipId: id }),
+  setSelectedClipId: (id) => set({ selectedClipId: id, selectedClipIds: id ? [id] : [] }),
+  toggleClipSelection: (id) =>
+    set((s) => {
+      const has = s.selectedClipIds.includes(id);
+      const next = has
+        ? s.selectedClipIds.filter((x) => x !== id)
+        : [...s.selectedClipIds, id];
+      const primary = has ? (next[next.length - 1] ?? null) : id;
+      return { selectedClipIds: next, selectedClipId: primary };
+    }),
+  setClipboardClips: (clips) => set({ clipboardClips: clips }),
   setTimelineZoom: (zoom) =>
     set({ timelineZoom: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom)) }),
   setTimelineScrollX: (x) => set({ timelineScrollX: Math.max(0, x) }),

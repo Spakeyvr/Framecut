@@ -8,14 +8,8 @@ export function TimelinePanel({ style }: { style?: React.CSSProperties }) {
   const tracks = useProjectStore((s) => s.tracks);
   const addTrack = useProjectStore((s) => s.addTrack);
 
-  const videoTracks = useMemo(
-    () => tracks.filter((t) => t.kind === "video"),
-    [tracks],
-  );
-  const audioTracks = useMemo(
-    () => tracks.filter((t) => t.kind === "audio"),
-    [tracks],
-  );
+  const videoTracks = useMemo(() => tracks.filter((t) => t.kind === "video"), [tracks]);
+  const audioTracks = useMemo(() => tracks.filter((t) => t.kind === "audio"), [tracks]);
   const zoom = useUIStore((s) => s.timelineZoom);
   const setZoom = useUIStore((s) => s.setTimelineZoom);
   const scrollX = useUIStore((s) => s.timelineScrollX);

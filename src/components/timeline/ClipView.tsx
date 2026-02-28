@@ -17,19 +17,21 @@ interface ContextMenuState {
 export function ClipView({ clip, track }: ClipViewProps) {
   const zoom = useUIStore((s) => s.timelineZoom);
   const scrollX = useUIStore((s) => s.timelineScrollX);
-  const selectedClipId = useUIStore((s) => s.selectedClipId);
+  const selectedClipIds = useUIStore((s) => s.selectedClipIds);
   const setSelectedClipId = useUIStore((s) => s.setSelectedClipId);
+  const toggleClipSelection = useUIStore((s) => s.toggleClipSelection);
   const playheadTime = useUIStore((s) => s.playheadTime);
   const moveClip = useProjectStore((s) => s.moveClip);
   const trimClip = useProjectStore((s) => s.trimClip);
   const splitClip = useProjectStore((s) => s.splitClip);
   const deleteClip = useProjectStore((s) => s.deleteClip);
+  const deleteClips = useProjectStore((s) => s.deleteClips);
   const pushSnapshot = useProjectStore((s) => s.pushSnapshot);
   const media = useProjectStore((s) => s.media);
 
   const mediaItem = media.find((m) => m.id === clip.mediaId);
   const isText = isTextClip(clip);
-  const isSelected = selectedClipId === clip.id;
+  const isSelected = selectedClipIds.includes(clip.id);
   const duration = clipDuration(clip);
 
   const left = clip.timelineStart * zoom - scrollX;
@@ -162,7 +164,11 @@ export function ClipView({ clip, track }: ClipViewProps) {
         style={{ left, width: Math.max(width, 2) }}
         onClick={(e) => {
           e.stopPropagation();
-          setSelectedClipId(clip.id);
+          if (e.shiftKey) {
+            toggleClipSelection(clip.id);
+          } else {
+            setSelectedClipId(clip.id);
+          }
         }}
         onContextMenu={handleContextMenu}
         onPointerDown={(e) => handlePointerDown(e, "move")}
@@ -201,11 +207,18 @@ export function ClipView({ clip, track }: ClipViewProps) {
           <button
             className="context-menu-item context-menu-item--danger"
             onClick={() => {
-              deleteClip(clip.id);
+              if (selectedClipIds.includes(clip.id) && selectedClipIds.length > 1) {
+                deleteClips(selectedClipIds);
+              } else {
+                deleteClip(clip.id);
+              }
+              setSelectedClipId(null);
               setContextMenu(null);
             }}
           >
-            Delete Clip
+            {selectedClipIds.includes(clip.id) && selectedClipIds.length > 1
+              ? `Delete ${selectedClipIds.length} Clips`
+              : "Delete Clip"}
           </button>
         </div>
       )}

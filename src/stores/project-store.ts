@@ -84,6 +84,13 @@ interface ProjectState {
   ) => void;
   splitClip: (clipId: string, atTimelineTime: number) => void;
   deleteClip: (clipId: string) => void;
+  deleteClips: (clipIds: string[]) => void;
+  pasteClip: (
+    clipData: Clip,
+    trackId: string,
+    timelineStart: number,
+    skipSnapshot?: boolean,
+  ) => string | null;
   updateTextProperties: (clipId: string, updates: Partial<TextProperties>) => void;
 
   // Actions — undo/redo
@@ -271,9 +278,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       const newTracks = [...s.tracks];
       if (kind === "video") {
         // Insert after the last video track (before audio tracks)
-        const lastVideoIdx = newTracks.findLastIndex(
-          (t) => t.kind === "video",
-        );
+        const lastVideoIdx = newTracks.findLastIndex((t) => t.kind === "video");
         newTracks.splice(lastVideoIdx + 1, 0, newTrack);
       } else {
         // Audio tracks go at the end
@@ -633,6 +638,49 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       })),
       isDirty: true,
     }));
+  },
+
+  deleteClips: (clipIds) => {
+    if (clipIds.length === 0) return;
+    const idSet = new Set(clipIds);
+    get().pushSnapshot();
+    set((s) => ({
+      tracks: s.tracks.map((t) => ({
+        ...t,
+        clips: t.clips.filter((c) => !idSet.has(c.id)),
+      })),
+      isDirty: true,
+    }));
+  },
+
+  pasteClip: (clipData, trackId, timelineStart, skipSnapshot) => {
+    const { tracks } = get();
+    const track = tracks.find((t) => t.id === trackId);
+    if (!track) return null;
+
+    const clipId = nanoid();
+    const newClip: Clip = {
+      id: clipId,
+      mediaId: clipData.mediaId,
+      trackId,
+      timelineStart: Math.max(0, timelineStart),
+      sourceStart: clipData.sourceStart,
+      sourceEnd: clipData.sourceEnd,
+      ...(clipData.textProperties
+        ? { textProperties: structuredClone(clipData.textProperties) }
+        : {}),
+    };
+
+    if (wouldOverlap(newClip, track)) return null;
+
+    if (!skipSnapshot) get().pushSnapshot();
+    set((s) => ({
+      tracks: s.tracks.map((t) =>
+        t.id === trackId ? { ...t, clips: sortClips([...t.clips, newClip]) } : t,
+      ),
+      isDirty: true,
+    }));
+    return clipId;
   },
 
   updateTextProperties: (clipId, updates) => {

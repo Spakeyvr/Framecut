@@ -105,11 +105,11 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Delete/Backspace: delete selected clip
+      // Delete/Backspace: delete selected clip(s)
       if (e.code === SHORTCUT_BINDINGS.DELETE || e.code === SHORTCUT_BINDINGS.BACKSPACE) {
         e.preventDefault();
-        if (ui.selectedClipId) {
-          project.deleteClip(ui.selectedClipId);
+        if (ui.selectedClipIds.length > 0) {
+          project.deleteClips(ui.selectedClipIds);
           ui.setSelectedClipId(null);
         }
         return;
@@ -132,6 +132,94 @@ export function useKeyboardShortcuts() {
       if (e.code === SHORTCUT_BINDINGS.SPLIT && !e.ctrlKey && !e.metaKey) {
         if (ui.selectedClipId) {
           project.splitClip(ui.selectedClipId, ui.playheadTime);
+        }
+        return;
+      }
+
+      // Ctrl/Cmd+C: copy selected clip(s)
+      if ((e.ctrlKey || e.metaKey) && e.code === SHORTCUT_BINDINGS.COPY) {
+        e.preventDefault();
+        if (ui.selectedClipIds.length > 0) {
+          const idSet = new Set(ui.selectedClipIds);
+          const clips: import("../types").Clip[] = [];
+          for (const t of project.tracks) {
+            for (const c of t.clips) {
+              if (idSet.has(c.id)) clips.push(structuredClone(c));
+            }
+          }
+          if (clips.length > 0) {
+            ui.setClipboardClips(clips);
+          }
+        }
+        return;
+      }
+
+      // Ctrl/Cmd+X: cut selected clip(s)
+      if ((e.ctrlKey || e.metaKey) && e.code === SHORTCUT_BINDINGS.CUT) {
+        e.preventDefault();
+        if (ui.selectedClipIds.length > 0) {
+          const idSet = new Set(ui.selectedClipIds);
+          const clips: import("../types").Clip[] = [];
+          for (const t of project.tracks) {
+            for (const c of t.clips) {
+              if (idSet.has(c.id)) clips.push(structuredClone(c));
+            }
+          }
+          if (clips.length > 0) {
+            ui.setClipboardClips(clips);
+            project.deleteClips(ui.selectedClipIds);
+            ui.setSelectedClipId(null);
+          }
+        }
+        return;
+      }
+
+      // Ctrl/Cmd+V: paste clip(s) at playhead
+      if ((e.ctrlKey || e.metaKey) && e.code === SHORTCUT_BINDINGS.PASTE) {
+        e.preventDefault();
+        const clipDataList = ui.clipboardClips;
+        if (clipDataList.length > 0) {
+          // Find the earliest clip start to compute relative offsets
+          const earliest = Math.min(...clipDataList.map((c) => c.timelineStart));
+          project.pushSnapshot();
+          const pastedIds: string[] = [];
+
+          for (const clipData of clipDataList) {
+            const offset = clipData.timelineStart - earliest;
+            const pasteTime = ui.playheadTime + offset;
+
+            // Resolve target track: original track, then fallback by kind
+            const isText = clipData.textProperties !== undefined;
+            const trackKind = isText ? "video" : undefined;
+            let targetTrack = project.tracks.find((t) => t.id === clipData.trackId);
+            if (!targetTrack && trackKind) {
+              targetTrack = project.tracks.find((t) => t.kind === trackKind);
+            }
+            if (!targetTrack) {
+              const sourceTrack = project.tracks.find((t) =>
+                t.clips.some((c) => c.mediaId === clipData.mediaId),
+              );
+              const kind = sourceTrack?.kind;
+              if (kind) {
+                targetTrack = project.tracks.find((t) => t.kind === kind);
+              }
+            }
+            if (!targetTrack) {
+              targetTrack = project.tracks[0];
+            }
+            if (targetTrack) {
+              const newId = project.pasteClip(clipData, targetTrack.id, pasteTime, true);
+              if (newId) pastedIds.push(newId);
+            }
+          }
+
+          // Select all pasted clips
+          if (pastedIds.length > 0) {
+            ui.setSelectedClipId(pastedIds[0]);
+            for (let i = 1; i < pastedIds.length; i++) {
+              ui.toggleClipSelection(pastedIds[i]);
+            }
+          }
         }
         return;
       }

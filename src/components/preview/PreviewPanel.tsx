@@ -877,10 +877,7 @@ export function PreviewPanel() {
   return (
     <div className="panel preview-panel">
       <div className="preview-canvas-wrap" ref={wrapRef}>
-        <canvas
-          ref={canvasRef}
-          onPointerDown={handleCanvasPointerDown}
-        />
+        <canvas ref={canvasRef} onPointerDown={handleCanvasPointerDown} />
       </div>
       <div className="preview-transport">
         <button

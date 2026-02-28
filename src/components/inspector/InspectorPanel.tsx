@@ -91,14 +91,29 @@ function TextInspector({
 
 export function InspectorPanel() {
   const selectedClipId = useUIStore((s) => s.selectedClipId);
+  const selectedClipIds = useUIStore((s) => s.selectedClipIds);
   const tracks = useProjectStore((s) => s.tracks);
   const media = useProjectStore((s) => s.media);
   const updateTextProperties = useProjectStore((s) => s.updateTextProperties);
 
+  // Resolve all selected clips
+  const selectedClips: Clip[] = [];
+  if (selectedClipIds.length > 0) {
+    const idSet = new Set(selectedClipIds);
+    for (const track of tracks) {
+      for (const clip of track.clips) {
+        if (idSet.has(clip.id)) selectedClips.push(clip);
+      }
+    }
+  }
+
+  const multiSelect = selectedClips.length > 1;
+  const allText = multiSelect && selectedClips.every(isTextClip);
+
+  // Single-select: resolve the primary clip + media
   let selectedClip: Clip | null = null;
   let selectedMedia = null;
-
-  if (selectedClipId) {
+  if (!multiSelect && selectedClipId) {
     for (const track of tracks) {
       const clip = track.clips.find((c) => c.id === selectedClipId);
       if (clip) {
@@ -111,13 +126,25 @@ export function InspectorPanel() {
 
   const isText = selectedClip && isTextClip(selectedClip);
 
+  const handleBatchTextUpdate = (_clipId: string, updates: Partial<TextProperties>) => {
+    for (const clip of selectedClips) {
+      updateTextProperties(clip.id, updates);
+    }
+  };
+
   return (
     <div className="panel inspector-panel">
       <div className="panel-header">
         <span>Inspector</span>
       </div>
       <div className="panel-body">
-        {!selectedClip ? (
+        {multiSelect ? (
+          allText ? (
+            <TextInspector clip={selectedClips[0]} onUpdate={handleBatchTextUpdate} />
+          ) : (
+            <div className="inspector-empty">{selectedClips.length} clips selected</div>
+          )
+        ) : !selectedClip ? (
           <div className="inspector-empty">Select a clip to inspect</div>
         ) : isText ? (
           <TextInspector clip={selectedClip} onUpdate={updateTextProperties} />

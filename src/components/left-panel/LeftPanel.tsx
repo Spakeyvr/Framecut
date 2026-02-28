@@ -28,7 +28,7 @@ function ToolboxContent() {
         <span className="toolbox-card-label">Shapes</span>
         <span className="toolbox-card-badge">Coming Soon</span>
       </button>
-<button className="toolbox-card toolbox-card--disabled" disabled>
+      <button className="toolbox-card toolbox-card--disabled" disabled>
         <span className="toolbox-card-icon">&#x21C4;</span>
         <span className="toolbox-card-label">Transitions</span>
         <span className="toolbox-card-badge">Coming Soon</span>

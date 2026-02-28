@@ -33,9 +33,7 @@ function App() {
   const isDirty = useProjectStore((s) => s.isDirty);
   const [ffmpegError, setFfmpegError] = useState<string | null>(null);
   const resizeRef = useRef<ResizeState | null>(null);
-  const [resizingTarget, setResizingTarget] = useState<ResizeTarget | null>(
-    null,
-  );
+  const [resizingTarget, setResizingTarget] = useState<ResizeTarget | null>(null);
 
   const handleResizeStart = useCallback(
     (target: ResizeTarget) => (e: React.MouseEvent) => {
@@ -92,7 +90,9 @@ function App() {
   }, [projectName, isDirty]);
 
   return (
-    <div className={`app${resizingTarget === "timeline" ? " app--resizing-timeline" : ""}`}>
+    <div
+      className={`app${resizingTarget === "timeline" ? " app--resizing-timeline" : ""}`}
+    >
       {ffmpegError && <div className="ffmpeg-warning">{ffmpegError}</div>}
       <Toolbar />
       <div
@@ -102,10 +102,7 @@ function App() {
         }}
       >
         <LeftPanel />
-        <div
-          className="panel-resize-handle"
-          onMouseDown={handleResizeStart("left")}
-        />
+        <div className="panel-resize-handle" onMouseDown={handleResizeStart("left")} />
         <PreviewPanel />
         <div
           className="panel-resize-handle"
@@ -117,9 +114,7 @@ function App() {
         className={`panel-resize-handle panel-resize-handle--horizontal${resizingTarget === "timeline" ? " panel-resize-handle--active" : ""}`}
         onMouseDown={handleResizeStart("timeline")}
       />
-      <TimelinePanel
-        style={{ height: timelineHeight }}
-      />
+      <TimelinePanel style={{ height: timelineHeight }} />
       {showExportDialog && <ExportDialog />}
       {showHelpDialog && <HelpDialog />}
     </div>
