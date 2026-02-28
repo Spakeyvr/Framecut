@@ -47,10 +47,10 @@ export function TimelinePanel() {
       const tracksArea = tracksAreaRef.current;
       if (!tracksArea) return;
       const rect = tracksArea.getBoundingClientRect();
-      const x = clientX - rect.left + tracksArea.scrollLeft;
+      const x = clientX - rect.left + scrollX;
       setPlayheadTime(Math.max(0, x / zoom));
     },
-    [zoom, setPlayheadTime],
+    [zoom, scrollX, setPlayheadTime],
   );
 
   useEffect(() => {

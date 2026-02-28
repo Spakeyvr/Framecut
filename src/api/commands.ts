@@ -143,6 +143,7 @@ export interface ExportRequestPayload {
   crf: number;
   audioBitrate: string;
   format: string;
+  hwAccel: string;
 }
 
 export const startExport = async (payload: ExportRequestPayload): Promise<string> => {
@@ -162,6 +163,7 @@ export const startExport = async (payload: ExportRequestPayload): Promise<string
     crf: payload.crf,
     audio_bitrate: payload.audioBitrate,
     format: payload.format,
+    hw_accel: payload.hwAccel,
   };
   const json = await invoke<string>("start_export", { request });
   const result = JSON.parse(json);
@@ -169,3 +171,6 @@ export const startExport = async (payload: ExportRequestPayload): Promise<string
 };
 
 export const cancelExport = (jobId: string) => invoke<void>("cancel_export", { jobId });
+
+export const detectHwEncoders = (): Promise<string[]> =>
+  invoke<string>("detect_hw_encoders").then((json) => JSON.parse(json));

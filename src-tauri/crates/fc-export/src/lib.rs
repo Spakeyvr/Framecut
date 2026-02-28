@@ -18,6 +18,10 @@ fn default_format() -> String {
     "mp4".to_string()
 }
 
+fn default_hw_accel() -> String {
+    "cpu".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportRequest {
     pub clips: Vec<ClipRef>,
@@ -30,9 +34,22 @@ pub struct ExportRequest {
     pub audio_bitrate: String,
     #[serde(default = "default_format")]
     pub format: String,
+    #[serde(default = "default_hw_accel")]
+    pub hw_accel: String,
 }
 
-fn validate_codec_format(codec: &str, format: &str) -> Result<(), String> {
+/// Map a hardware encoder name back to its logical codec for format validation.
+fn logical_codec(encoder: &str) -> &str {
+    match encoder {
+        "h264_nvenc" | "h264_qsv" | "h264_amf" => "libx264",
+        "hevc_nvenc" | "hevc_qsv" | "hevc_amf" => "libx265",
+        "av1_nvenc" => "libaom-av1",
+        other => other,
+    }
+}
+
+fn validate_codec_format(encoder: &str, format: &str) -> Result<(), String> {
+    let codec = logical_codec(encoder);
     let valid = match format {
         "mp4" => matches!(codec, "libx264" | "libx265"),
         "webm" => matches!(codec, "libvpx-vp9" | "libaom-av1"),
@@ -42,10 +59,114 @@ fn validate_codec_format(codec: &str, format: &str) -> Result<(), String> {
     if !valid {
         return Err(format!(
             "Codec '{}' is not compatible with format '{}'",
-            codec, format
+            encoder, format
         ));
     }
     Ok(())
+}
+
+/// Given a logical codec and hw_accel vendor, return the actual FFmpeg encoder name.
+/// Falls back to the software codec if no hardware mapping exists.
+fn resolve_encoder(codec: &str, hw_accel: &str) -> String {
+    if hw_accel == "cpu" {
+        return codec.to_string();
+    }
+    match (hw_accel, codec) {
+        ("nvenc", "libx264") => "h264_nvenc".to_string(),
+        ("nvenc", "libx265") => "hevc_nvenc".to_string(),
+        ("nvenc", "libaom-av1") => "av1_nvenc".to_string(),
+        ("qsv", "libx264") => "h264_qsv".to_string(),
+        ("qsv", "libx265") => "hevc_qsv".to_string(),
+        ("amf", "libx264") => "h264_amf".to_string(),
+        ("amf", "libx265") => "hevc_amf".to_string(),
+        // No hardware encoder for this codec — silent fallback to CPU
+        _ => codec.to_string(),
+    }
+}
+
+/// Append encoder-specific quality/rate-control flags to the FFmpeg args.
+fn append_quality_args(args: &mut Vec<String>, encoder: &str, crf: u32) {
+    match encoder {
+        "h264_nvenc" | "hevc_nvenc" | "av1_nvenc" => {
+            args.extend([
+                "-rc".to_string(), "vbr".to_string(),
+                "-cq".to_string(), crf.to_string(),
+                "-preset".to_string(), "p5".to_string(),
+                "-tune".to_string(), "hq".to_string(),
+                "-multipass".to_string(), "fullres".to_string(),
+            ]);
+        }
+        "h264_qsv" | "hevc_qsv" => {
+            args.extend([
+                "-global_quality".to_string(), crf.to_string(),
+                "-preset".to_string(), "medium".to_string(),
+                "-look_ahead".to_string(), "1".to_string(),
+            ]);
+        }
+        "h264_amf" | "hevc_amf" => {
+            args.extend([
+                "-rc".to_string(), "cqp".to_string(),
+                "-qp_i".to_string(), crf.to_string(),
+                "-qp_p".to_string(), (crf + 2).to_string(),
+                "-quality".to_string(), "quality".to_string(),
+            ]);
+        }
+        "libx264" | "libx265" => {
+            args.extend([
+                "-crf".to_string(), crf.to_string(),
+                "-preset".to_string(), "medium".to_string(),
+            ]);
+        }
+        "libvpx-vp9" => {
+            args.extend([
+                "-crf".to_string(), crf.to_string(),
+                "-b:v".to_string(), "0".to_string(),
+                "-speed".to_string(), "2".to_string(),
+            ]);
+        }
+        "libaom-av1" => {
+            args.extend([
+                "-crf".to_string(), crf.to_string(),
+                "-b:v".to_string(), "0".to_string(),
+                "-cpu-used".to_string(), "4".to_string(),
+            ]);
+        }
+        _ => {
+            args.extend(["-crf".to_string(), crf.to_string()]);
+        }
+    }
+}
+
+/// Run `ffmpeg -encoders` and return the names of available hardware encoders.
+pub fn detect_hw_encoders() -> Result<Vec<String>, String> {
+    let output = fc_ffmpeg::ffmpeg_command()
+        .args(["-encoders", "-hide_banner"])
+        .output()
+        .map_err(|e| format!("Failed to run ffmpeg: {e}"))?;
+
+    if !output.status.success() {
+        return Err("ffmpeg -encoders failed".to_string());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let hw_encoder_names = [
+        "h264_nvenc", "hevc_nvenc", "av1_nvenc",
+        "h264_qsv", "hevc_qsv",
+        "h264_amf", "hevc_amf",
+    ];
+
+    let mut found = Vec::new();
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        for &name in &hw_encoder_names {
+            if trimmed.contains(name) && !found.contains(&name.to_string()) {
+                found.push(name.to_string());
+            }
+        }
+    }
+
+    Ok(found)
 }
 
 /// Build an FFmpeg concat file and command for the export.
@@ -149,34 +270,18 @@ fn build_ffmpeg_args(
         args.extend(["-map".to_string(), "[outa]".to_string()]);
     }
 
-    // Validate codec-format compatibility
-    validate_codec_format(&request.codec, &request.format)?;
+    // Resolve the actual FFmpeg encoder (may be hw-accelerated or software fallback)
+    let encoder = resolve_encoder(&request.codec, &request.hw_accel);
 
-    args.extend(["-c:v".to_string(), request.codec.clone()]);
+    // Validate encoder-format compatibility
+    validate_codec_format(&encoder, &request.format)?;
 
-    // Codec-specific encoding flags
-    match request.codec.as_str() {
-        "libx264" | "libx265" => {
-            args.extend(["-preset".to_string(), "medium".to_string()]);
-        }
-        "libvpx-vp9" => {
-            args.extend([
-                "-b:v".to_string(), "0".to_string(),
-                "-speed".to_string(), "2".to_string(),
-            ]);
-        }
-        "libaom-av1" => {
-            args.extend([
-                "-b:v".to_string(), "0".to_string(),
-                "-cpu-used".to_string(), "4".to_string(),
-            ]);
-        }
-        _ => {}
-    }
+    args.extend(["-c:v".to_string(), encoder.clone()]);
+
+    // Apply encoder-specific quality/rate-control flags
+    append_quality_args(&mut args, &encoder, request.crf);
 
     args.extend([
-        "-crf".to_string(),
-        request.crf.to_string(),
         "-r".to_string(),
         format!("{}", request.fps),
     ]);

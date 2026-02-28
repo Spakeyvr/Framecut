@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { save } from "@tauri-apps/plugin-dialog";
 import { useUIStore } from "../../stores/ui-store";
 import { useProjectStore } from "../../stores/project-store";
-import { startExport, cancelExport } from "../../api/commands";
+import { startExport, cancelExport, detectHwEncoders } from "../../api/commands";
 import {
   EXPORT_PRESETS,
   RESOLUTIONS,
@@ -12,8 +12,10 @@ import {
   QUALITY_LEVELS,
   FRAME_RATES,
   getCrfForCodec,
+  HW_ACCEL_OPTIONS,
+  hwAccelSupportsCodec,
 } from "../../types";
-import type { ClipRef, ExportFormat } from "../../types";
+import type { ClipRef, ExportFormat, HwAccelMode } from "../../types";
 
 const DEFAULT_PRESET = EXPORT_PRESETS[0];
 
@@ -54,6 +56,11 @@ export function ExportDialog() {
   const [codecId, setCodecId] = useState(DEFAULT_PRESET.codec);
   const [qualityIndex, setQualityIndex] = useState(1); // "High"
   const [fps, setFps] = useState(defaultFps);
+
+  // Hardware acceleration state
+  const [hwAccel, setHwAccel] = useState<HwAccelMode>("cpu");
+  const [availableHwAccels, setAvailableHwAccels] = useState<HwAccelMode[]>(["cpu"]);
+  const [detectingHw, setDetectingHw] = useState(true);
 
   // Export progress state
   const [exporting, setExporting] = useState(false);
@@ -129,6 +136,13 @@ export function ExportDialog() {
     setSelectedPresetId("custom");
   };
 
+  const handleHwAccelChange = (mode: HwAccelMode) => {
+    setHwAccel(mode);
+    setSelectedPresetId("custom");
+  };
+
+  const hwAccelValid = hwAccelSupportsCodec(hwAccel, codecId);
+
   // ── Event listeners ─────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -193,6 +207,31 @@ export function ExportDialog() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [exporting, setShowExportDialog]);
 
+  // Detect available hardware encoders on mount
+  useEffect(() => {
+    let cancelled = false;
+    detectHwEncoders()
+      .then((encoders) => {
+        if (cancelled) return;
+        const available: HwAccelMode[] = ["cpu"];
+        for (const opt of HW_ACCEL_OPTIONS) {
+          if (opt.id === "cpu") continue;
+          const vendorEncoders = Object.values(opt.encoders);
+          if (vendorEncoders.some((enc) => encoders.includes(enc!))) {
+            available.push(opt.id);
+          }
+        }
+        setAvailableHwAccels(available);
+      })
+      .catch(() => {
+        // Detection failed; CPU-only is the safe default
+      })
+      .finally(() => {
+        if (!cancelled) setDetectingHw(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
   // ── Export action ───────────────────────────────────────────────────────────
 
   const handleExport = async () => {
@@ -244,6 +283,7 @@ export function ExportDialog() {
         crf,
         audioBitrate,
         format,
+        hwAccel,
       });
       if (!currentJobIdRef.current || currentJobIdRef.current === id) {
         setJobId(id);
@@ -365,6 +405,30 @@ export function ExportDialog() {
               ))}
             </select>
           </div>
+        </div>
+
+        {/* Encoding (Hardware Acceleration) */}
+        <div className="export-field">
+          <label>Encoding</label>
+          <select
+            value={hwAccel}
+            onChange={(e) => handleHwAccelChange(e.target.value as HwAccelMode)}
+            disabled={exporting || detectingHw}
+          >
+            {availableHwAccels.map((id) => {
+              const opt = HW_ACCEL_OPTIONS.find((o) => o.id === id)!;
+              return (
+                <option key={id} value={id}>
+                  {opt.label}
+                </option>
+              );
+            })}
+          </select>
+          {!hwAccelValid && hwAccel !== "cpu" && (
+            <span style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2, display: "block" }}>
+              {CODECS.find(c => c.id === codecId)?.label ?? codecId} has no GPU encoder — will use CPU
+            </span>
+          )}
         </div>
 
         {/* Frame Rate */}

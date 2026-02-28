@@ -130,6 +130,56 @@ export function getCrfForCodec(qualityIndex: number, codec: string): number {
   }
 }
 
+// ── Hardware Acceleration ─────────────────────────────────────────────────────
+
+export type HwAccelMode = "cpu" | "nvenc" | "qsv" | "amf";
+
+export interface HwAccelOption {
+  id: HwAccelMode;
+  label: string;
+  /** FFmpeg encoder names this vendor provides, keyed by logical codec */
+  encoders: Partial<Record<string, string>>;
+}
+
+export const HW_ACCEL_OPTIONS: HwAccelOption[] = [
+  {
+    id: "cpu",
+    label: "CPU (Software)",
+    encoders: {},
+  },
+  {
+    id: "nvenc",
+    label: "NVIDIA NVENC",
+    encoders: {
+      "libx264": "h264_nvenc",
+      "libx265": "hevc_nvenc",
+      "libaom-av1": "av1_nvenc",
+    },
+  },
+  {
+    id: "qsv",
+    label: "Intel Quick Sync",
+    encoders: {
+      "libx264": "h264_qsv",
+      "libx265": "hevc_qsv",
+    },
+  },
+  {
+    id: "amf",
+    label: "AMD AMF",
+    encoders: {
+      "libx264": "h264_amf",
+      "libx265": "hevc_amf",
+    },
+  },
+];
+
+export function hwAccelSupportsCodec(hwAccel: HwAccelMode, codec: string): boolean {
+  if (hwAccel === "cpu") return true;
+  const option = HW_ACCEL_OPTIONS.find((o) => o.id === hwAccel);
+  return option ? codec in option.encoders : false;
+}
+
 // ── IPC payloads ──────────────────────────────────────────────────────────────
 
 /** Minimal clip info sent to Rust for preview/export (no UI fields) */

@@ -82,6 +82,10 @@ fn default_format() -> String {
     "mp4".to_string()
 }
 
+fn default_hw_accel() -> String {
+    "cpu".to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExportRequest {
     pub clips: Vec<ClipRef>,
@@ -94,6 +98,8 @@ pub struct ExportRequest {
     pub audio_bitrate: String,
     #[serde(default = "default_format")]
     pub format: String,
+    #[serde(default = "default_hw_accel")]
+    pub hw_accel: String,
 }
 
 // ── Project commands ──────────────────────────────────────────────────────────
@@ -332,6 +338,12 @@ async fn start_export(
 }
 
 #[command]
+fn detect_hw_encoders() -> Result<String, String> {
+    let encoders = fc_export::detect_hw_encoders()?;
+    serde_json::to_string(&encoders).map_err(|e| format!("Serialization error: {e}"))
+}
+
+#[command]
 fn cancel_export(job_id: String, state: State<'_, AppState>) -> Result<(), String> {
     if let Some(sender) = state.export_jobs.lock().map_err(|e| e.to_string())?.remove(&job_id) {
         let _ = sender.send(true);
@@ -456,6 +468,7 @@ pub fn run() {
             // Export
             start_export,
             cancel_export,
+            detect_hw_encoders,
             // Preview
             seek_preview,
             check_ffmpeg,
